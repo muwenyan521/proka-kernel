@@ -28,6 +28,7 @@ stack_top:
 
 ; The entry of the program
 section .text
+default rel
 global _start
 
 _start:

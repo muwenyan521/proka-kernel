@@ -1,3 +1,8 @@
 # Ignore the output object file (In out/)
 out/*
 
+
+
+# Added by cargo
+
+/target
