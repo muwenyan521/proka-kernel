@@ -28,11 +28,15 @@ stack_top:
 
 ; The entry of the program
 section .text
-default rel
+extern kernel_main
 global _start
 
 _start:
     mov esp, stack_top	; Set up the stack pointer
-    ; Todo: Write the main kernel code
+    ; TODO: Write the cide that switch to the long mode.
     
+    ; Just enter the main kernel function
+    call kernel_main
+    
+    ; Usually, the code shouldn't run these codes
     hlt

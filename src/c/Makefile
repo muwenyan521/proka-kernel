@@ -2,7 +2,7 @@
 # Copyright (C) RainSTR Studio 2025, All Rights Reserved.
 #
 # This is the Makefile, which will build the C code
-# only and link with C code.
+# only and link with ASM code.
 
 # The ASM source
 C_CODE = $(wildcard *.c)
@@ -15,4 +15,4 @@ OBJ_FILES = $(patsubst %.c,$(OBJ_DIR)/%.o,$(C_CODE))
 all: $(OBJ_FILES)
 
 $(OBJ_DIR)/%.o: %.c
-	gcc -c $< -o $@
+	gcc -c $(CFLAGS) $< -o $@

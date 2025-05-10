@@ -7,3 +7,9 @@ use core::panic::PanicInfo;
 fn panic(_: &PanicInfo) -> ! {
     loop {}
 }
+
+/* The Kernel main code */
+#[unsafe(no_mangle)]
+pub fn kernel_main() -> ! {
+    loop {}
+}
