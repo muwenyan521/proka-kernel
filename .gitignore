@@ -1,8 +1,5 @@
-# Ignore the output object file (In out/)
-out/*
-
-
+# Ignore the disk file
+disk.img
 
 # Added by cargo
-
 /target
