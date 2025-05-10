@@ -28,15 +28,41 @@ stack_top:
 
 ; The entry of the program
 section .text
-extern kernel_main
+default rel
 global _start
+
+.unsupport_cpu:
+    ; Handling Unsupported CPU
+    hlt
+    jmp .unsupport_cpu
 
 _start:
     mov esp, stack_top	; Set up the stack pointer
-    ; TODO: Write the cide that switch to the long mode.
     
-    ; Just enter the main kernel function
-    call kernel_main
+    ; Check for CPUID support
+    pushfd
+    pop eax
+    mov ecx, eax
+    xor eax, 0x200000
+    push eax
+    popfd
+    pushfd
+    pop eax
+    xor eax, ecx
+    jz .unsupport_cpu
+
+    ; Check for extended CPUID
+    mov eax, 0x80000000
+    cpuid
+    cmp eax, 0x80000001
+    jb .unsupport_cpu
+
+    ; Check for Long Mode support
+    mov eax, 0x80000001
+    cpuid
+    test edx, (1 << 29)
+    jz .unsupport_cpu
     
-    ; Usually, the code shouldn't run these codes
+    ; Todo: Write the main kernel code
+    
     hlt
