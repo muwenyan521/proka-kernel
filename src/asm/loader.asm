@@ -29,12 +29,8 @@ stack_top:
 ; The entry of the program
 section .text
 default rel
+bits 32
 global _start
-
-.unsupport_cpu:
-    ; Handling Unsupported CPU
-    hlt
-    jmp .unsupport_cpu
 
 _start:
     mov esp, stack_top	; Set up the stack pointer
@@ -66,3 +62,8 @@ _start:
     ; Todo: Write the main kernel code
     
     hlt
+
+.unsupport_cpu:
+    ; Handling Unsupported CPU
+    hlt
+    jmp .unsupport_cpu
