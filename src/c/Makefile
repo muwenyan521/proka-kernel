@@ -15,4 +15,4 @@ OBJ_FILES = $(patsubst %.c,$(OBJ_DIR)/%.o,$(C_CODE))
 all: $(OBJ_FILES)
 
 $(OBJ_DIR)/%.o: %.c
-	gcc $< -o $@
+	gcc -c $< -o $@
