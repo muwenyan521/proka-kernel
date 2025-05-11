@@ -6,7 +6,7 @@
 
 # The ASM source
 C_CODE = $(wildcard *.c)
-CFLAGS = -std=gnu99 -ffreestanding -O0 -Wall -Wextra -fPIE -fno-stack-protector
+CFLAGS = -std=gnu99 -ffreestanding -O0 -Wall -Wextra -fPIE -fno-stack-protector -lgcc
 
 # The object file
 OBJ_FILES = $(patsubst %.c,$(OBJ_DIR)/%.o,$(C_CODE))

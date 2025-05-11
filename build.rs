@@ -4,8 +4,8 @@
 // The build script, which can link the C and ASM code.
 
 // Import some modules
-use std::process::Command;
-use glob::glob; // For checking the .o file
+use glob::glob;
+use std::process::Command; // For checking the .o file
 
 fn main() {
     // First, run "make" to build the ASM and C code

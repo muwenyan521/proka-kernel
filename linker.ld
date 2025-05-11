@@ -1,11 +1,16 @@
 ENTRY(_start)
 
 SECTIONS {
-    . = 1M;	/* Load ad 1MB address */
+    . = 1M;	/* Load at 1MB address */
 
     /* Multiboot2 sections */
     .multiboot2 : {
         KEEP(*(.multiboot2))
+    }
+
+    /* PVH note sections */
+    .note.pvh : {
+        KEEP(*(.note.pvh))
     }
 
     /* Other sections */
