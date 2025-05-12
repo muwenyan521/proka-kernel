@@ -11,7 +11,7 @@
 /// # Example
 /// ```rust
 /// use proka_kernel::extern_safe;
-/// 
+///
 /// // Make sure that the C function was defined and linked currectly.
 /// extern_safe! {
 ///     fn add(a: i32, b: i32) -> i32;

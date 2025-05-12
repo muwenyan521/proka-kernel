@@ -6,13 +6,24 @@
 
 ; Define a section "multiboot2"
 section .multiboot2
-align 4	   ; The alignment required
+align 8	   ; The alignment required
 begin:
     dd 0xE85250D6	; Magic number
     dd 0 		; Architecture, 0 is protected mode
     dd end - begin	; Header length
     dd 0x100000000 - (0xE85250D6 + 0 + (end - begin))	; Checksum
-    
+
+    ; Framebuffer tag
+    dw 5        ; Tag type, 5 is framebuffer
+    dw 0	; Flags, needed
+    dd 20	; Tag size
+    dd 1024	; The width
+    dd 768	; The height
+    dd 32	; The depth
+
+    ; Fill 4 bytes to align
+    resb 4
+
     ; End tag
     dw 0	; Tag type, 0 is end
     dw 0	; Flags
@@ -28,12 +39,14 @@ stack_top:
 
 ; The entry of the program
 section .text
+extern kernel_main
 default rel
 bits 32
 global _start
 
 _start:
     mov esp, stack_top	; Set up the stack pointer
+    push ebx		; Save EBX value as the argument
     
     ; Check for CPUID support
     pushfd
@@ -59,8 +72,10 @@ _start:
     test edx, (1 << 29)
     jz .unsupport_cpu
     
-    ; Todo: Write the main kernel code
-    
+    ; Call the kernel entry
+    call kernel_main
+    add esp, 4
+     
     hlt
 
 .unsupport_cpu:

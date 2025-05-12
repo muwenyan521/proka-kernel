@@ -34,7 +34,7 @@ menuentry "Proka Kernel" {
 }' | sudo tee /mnt/boot/grub/grub.cfg > /dev/null
 
     # Move kernel file to /mnt/boot directory
-    sudo mv target/x86_64-unknown-none/debug/proka-kernel /mnt/boot
+    sudo cp target/x86_64-unknown-none/debug/proka-kernel /mnt/boot
 
     # Unmount the partition
     sudo umount /mnt
