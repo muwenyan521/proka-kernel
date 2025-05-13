@@ -14,4 +14,4 @@ OBJ_FILES := $(patsubst %.asm,$(OBJ_DIR)/%.o,$(ASM_CODE))
 all: $(OBJ_FILES)
 
 $(OBJ_DIR)/%.o: %.asm
-	nasm -f elf64 $< -o $@
+	nasm -f elf64 $< -o $@ -g

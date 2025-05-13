@@ -37,6 +37,10 @@ stack_bottom:
     resb 16384 ; 16KB stack, probably enough
 stack_top:
 
+section .data
+    mb_magic dd 0	; The EAX value storing place (magic num)
+    mbi_ptr dd 0	; The EBX value storing place (address)
+
 ; The entry of the program
 section .text
 extern kernel_main
@@ -45,8 +49,9 @@ bits 32
 global _start
 
 _start:
+    mov [mb_magic], eax	; Save EAX value
+    mov [mbi_ptr], ebx 	; Save EBX value
     mov esp, stack_top	; Set up the stack pointer
-    push ebx		; Save EBX value as the argument
     
     ; Check for CPUID support
     pushfd
@@ -73,8 +78,10 @@ _start:
     jz .unsupport_cpu
     
     ; Call the kernel entry
-    call kernel_main
-    add esp, 4
+    push dword [mb_magic]	; The second argument
+    push dword [mbi_ptr]	; The first argument
+    call kernel_main		; Call the kernel function
+    add esp, 8
      
     hlt
 
@@ -82,3 +89,4 @@ _start:
     ; Handling Unsupported CPU
     hlt
     jmp .unsupport_cpu
+

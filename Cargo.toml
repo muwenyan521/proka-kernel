@@ -11,3 +11,4 @@ lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
 multiboot2 = { version = "0.23.1", default-features = false }
 paste = "1.0.15"
 spin = "0.10.0"
+x86_64 = "0.15.2"

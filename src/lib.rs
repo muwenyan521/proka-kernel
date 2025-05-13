@@ -5,6 +5,9 @@
 //! to use the kernel functions easily.
 
 #![no_std]
+pub mod kernel {
+    pub mod output;
+}
 
 /// This will extern the C function and make it to safe.
 ///

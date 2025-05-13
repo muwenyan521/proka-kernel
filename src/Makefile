@@ -11,7 +11,6 @@
 ASM_SRC = asm
 C_SRC = c
 OBJ_DIR = $(PWD)/target/obj
-TARGET = kernel
 LDFLAGS = -nostdlib
 
 # Build the codes (easy, just run the Makefile in each dirs)

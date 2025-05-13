@@ -42,6 +42,26 @@ menuentry "Proka Kernel" {
     # Unmap the loop device
     sudo losetup -d /dev/loop0
 }
+
+# If the disk exists, uses this
+exist_disk() {
+    # Mount the disk image to the loop device
+    sudo losetup -P /dev/loop0 disk.img
+
+    # Mount the first partition of the loop device to the /mnt directory
+    sudo mount /dev/loop0p1 /mnt
+
+    # Copy the file to the /boot directory of the mount point
+    sudo cp target/x86_64-unknown-none/debug/proka-kernel /mnt/boot
+
+    # Unmount the /mnt directory
+    sudo umount /mnt
+
+    # Detach the loop device
+    sudo losetup -d /dev/loop0
+}
+
+
 # Build the kernel first
 cargo build
 
@@ -56,7 +76,11 @@ fi
 if [ ! -f disk.img ]; then
     echo "NOTE: The disk image is not exist, making..."
     make_disk
+else
+    echo "NOTE: Disk exist, updating kernel..."
+    exist_disk
 fi
 
 # Run QEMU with disk image and arguments
-qemu-system-x86_64 -hda disk.img $qemu_arguments
+echo "INFO: Starting QEMU emulation..."
+qemu-system-x86_64 -drive format=raw,file=disk.img $qemu_arguments
