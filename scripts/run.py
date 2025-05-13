@@ -152,8 +152,11 @@ def run_qemu(image_file, param):
     if param:
         qemu_cmd += f' {" ".join(param)}'
     print("Qemu parameter:", qemu_cmd)
-    run_command(qemu_cmd)
-
+    try:
+        run_command(qemu_cmd)
+    except KeyboardInterrupt:
+        pass
+    
 
 def main():
     parser = argparse.ArgumentParser(description="Create bootable Proka OS disk image")
