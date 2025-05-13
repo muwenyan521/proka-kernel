@@ -92,7 +92,7 @@ menuentry "Proka OS" {
 
         print("Copying kernel...")
         dst = os.path.join(boot_dir, "proka-kernel")
-        run_command(f'cp {kernel_src} {dst}')
+        run_command(f'cp {kernel_src} {dst}', True)
         
     finally:
         # Cleanup
@@ -131,7 +131,7 @@ def update_disk(image_file, mount_point):
 
         print("Copying kernel...")
         dst = os.path.join(boot_dir, "proka-kernel")
-        run_command(f'cp {kernel_src} {dst}')
+        run_command(f'cp {kernel_src} {dst}', True)
         
     finally:
         # Cleanup
