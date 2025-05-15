@@ -78,8 +78,8 @@ _start:
     jz .unsupport_cpu
     
     ; Call the kernel entry
-    push dword [mb_magic]	; The second argument
-    push dword [mbi_ptr]	; The first argument
+    mov eax, [mb_magic]		; Recover EAX
+    mov ebx, [mbi_ptr]		; Recovoer EBX
     call kernel_main		; Call the kernel function
     add esp, 8
      

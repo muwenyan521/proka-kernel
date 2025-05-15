@@ -6,21 +6,16 @@
 #
 #
 
-.PHONY: asm c
-# Define some basic variables (ONLY ALLOW TO USE IN PROJECT ROOT)
-ASM_SRC = asm
-C_SRC = c
+# Define some basic variables
+BUILD_DIRS = boot 
 OBJ_DIR = $(PWD)/target/obj
 LDFLAGS = -nostdlib
 
 # Build the codes (easy, just run the Makefile in each dirs)
-all: mkdir asm c
+all: mkdir
+	# Iterate all the BUILD_DIRS.
+	$(foreach dir, $(BUILD_DIRS), make -C $(dir) OBJ_DIR=$(OBJ_DIR))
 
-asm:
-	make -C $(ASM_SRC) OBJ_DIR=$(OBJ_DIR)
-
-c:
-	make -C $(C_SRC) OBJ_DIR=$(OBJ_DIR)
 
 mkdir:
 	mkdir -p $(OBJ_DIR)

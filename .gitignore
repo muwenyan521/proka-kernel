@@ -1,5 +1,8 @@
 # Ignore the disk file
-disk.img
+proka.img
+
+# And the temporary mount dir
+mnt/*
 
 # Added by cargo
 /target
