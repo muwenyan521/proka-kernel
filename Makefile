@@ -7,7 +7,7 @@
 #
 
 # Define some basic variables
-BUILD_DIRS = boot 
+BUILD_DIRS = boot
 OBJ_DIR = $(PWD)/target/obj
 LDFLAGS = -nostdlib
 

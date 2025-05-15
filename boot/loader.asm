@@ -78,8 +78,8 @@ _start:
     jz .unsupport_cpu
     
     ; Call the kernel entry
-    mov eax, [mb_magic]		; Recover EAX
-    mov ebx, [mbi_ptr]		; Recovoer EBX
+    mov edi, [mb_magic]		; Recover EAX
+    mov esi, [mbi_ptr]		; Recovor EBX
     call kernel_main		; Call the kernel function
     add esp, 8
      
