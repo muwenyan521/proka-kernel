@@ -66,6 +66,8 @@ long_mode_entry:
     mov gs, ax
     mov ss, ax
 
+    pop rdi
+
     ; 调用64位内核主函数
     call kernel_main
     hlt
