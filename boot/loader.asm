@@ -43,7 +43,8 @@ global _start
 _start:
     mov esp, stack_top
     push ebx    ; push Multiboot info pointer to stack_top
-
+    
+    call check_multiboot
     call check_cpu ; Check for CPUID support
     
     call set_up_page_tables
@@ -177,6 +178,15 @@ check_cpu:
     mov dword [0xb8018], 0x0f000f75  ; "u" + 终止
     hlt
 
+check_multiboot:
+    cmp eax, 0x36d76289
+    jne .no_multiboot
+    ret
+    
+.no_multiboot:
+    hlt
+    jmp .no_multiboot
+    
 section .bss
 align 4096
 p4_table:
