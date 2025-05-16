@@ -7,14 +7,14 @@
 #
 .PHONY: mkdir clean
 # Define some basic variables
-BUILD_DIRS = boot 
+BUILD_DIRS = boot tests 
 OBJ_DIR = $(PWD)/target/obj
 LDFLAGS = -nostdlib
 
 # Build the codes (easy, just run the Makefile in each dirs)
 all: clean mkdir
 	# Iterate all the BUILD_DIRS.
-	$(foreach dir, $(BUILD_DIRS), make -C $(dir) OBJ_DIR=$(OBJ_DIR))
+	$(foreach dir, $(BUILD_DIRS), make -C $(dir) OBJ_DIR=$(OBJ_DIR);)
 
 
 mkdir:

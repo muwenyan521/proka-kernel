@@ -2,7 +2,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use multiboot2::{BootInformation, BootInformationHeader, MAGIC};
+use multiboot2::{BootInformation, BootInformationHeader};
 #[macro_use]
 extern crate proka_kernel;
 
@@ -20,22 +20,22 @@ extern_safe! {
 
 /* The Kernel main code */
 #[unsafe(no_mangle)]
-pub extern "C" fn kernel_main(mb_magic: u32, mbi_ptr: *const BootInformationHeader) -> ! {
-    // Check the magic number
-    if mb_magic != MAGIC {
-        panic!("The kernel does not support multiboot2.")
-    }
-    // Get the multiboot2 information
+pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
+    // The magic number has checked in assmebly, so pass it.
+
+    /* Get the multiboot2 information */
     let boot_info = unsafe { BootInformation::load(mbi_ptr).expect("Failed to load BootInformation") };
 
-    // Get the framebuffer tag.
+    /* Get the framebuffer tag */
     // In multiboot2 crate, the "info.framebuffer_tag()" will
-    // return a Some(Ok(framebuffer)), so use "match" to handle.
+    // return a Some(Ok(framebuffer)), so use "match" to handle. 
     let framebuffer = match boot_info.framebuffer_tag() {
         Some(Ok(tag)) => tag,
         Some(Err(_)) => panic!("Unknown framebuffer type"),
         None => panic!("No framebuffer tag"),
     };
 
-    panic!("Hello")
+    // let test = safe_add(3, 5);
+
+    loop {}
 }

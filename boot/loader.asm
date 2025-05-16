@@ -4,6 +4,10 @@
 ; This file contains the header of multiboot2, which can
 ; boot up by using GRUB.
 
+; The data section
+section .data
+    mbi_ptr dd 0	; The EBX value, which is very important
+
 ; The entry of the program
 section .text
 default rel
@@ -13,7 +17,7 @@ bits 32
 global _start
 _start:
     mov esp, stack_top
-    push ebx    ; push Multiboot info pointer to stack_top
+    mov [mbi_ptr], ebx	; push Multiboot info pointer to stack_top
     
     call check_multiboot ; Check is this boot uo by multiboot2
 
@@ -30,7 +34,7 @@ _start:
 bits 64
 extern kernel_main
 long_mode_entry:
-    ; 更新段寄存器
+    ; Update segment registers
     mov ax, 0
     mov ds, ax
     mov es, ax
@@ -38,11 +42,9 @@ long_mode_entry:
     mov gs, ax
     mov ss, ax
 
-    pop rdi
-
-    ; 调用64位内核主函数
-    call kernel_main
-    hlt
+    ; Jump to the 64-bit kernel
+    mov edi, [mbi_ptr]	; Pass the argument to the kernel
+    jmp kernel_main	; Just jump to it
 
 bits 32
 set_up_page_tables:

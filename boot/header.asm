@@ -7,6 +7,8 @@ begin:
     dd end - begin	; Header length
     dd 0x100000000 - (0xE85250D6 + 0 + (end - begin))	; Checksum
 
+align 8		; The alignment required
+framebuffer_tag:
     ; Framebuffer tag
     dw 5        ; Tag type, 5 is framebuffer
     dw 0	; Flags, needed
@@ -15,11 +17,11 @@ begin:
     dd 768	; The height
     dd 32	; The depth
 
-    ; Fill 4 bytes to align
-    resb 4
-
+align 8		; The alignment required
+end_tag:
     ; End tag
     dw 0	; Tag type, 0 is end
     dw 0	; Flags
     dd 8	; Tag size
+
 end:
