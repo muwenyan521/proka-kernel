@@ -30,13 +30,6 @@ begin:
     dd 8	; Tag size
 end:
 
-; Stack section
-section .bss
-align 16
-stack_bottom:
-    resb 16384 ; 16KB stack, probably enough
-stack_top:
-
 section .data
     mb_magic dd 0	; The EAX value storing place (magic num)
     mbi_ptr dd 0	; The EBX value storing place (address)
@@ -48,40 +41,25 @@ bits 32
 global _start
 
 _start:
-    mov [mb_magic], eax	; Save EAX value
-    mov [mbi_ptr], ebx 	; Save EBX value
-    mov esp, stack_top	; Set up the stack pointer
-    
+    mov esp, stack_top
+    push ebx    ; push Multiboot info pointer to stack_top
+
     call check_cpu ; Check for CPUID support
     
-    ; 设置页表
-    call setup_page_tables
-
-    ; 启用PAE
-    mov eax, cr4
-    or eax, (1 << 5)     ; CR4.PAE = 1
-    mov cr4, eax
-
-    ; 设置EFER.LME
-    mov ecx, 0xC0000080  ; EFER MSR编号
-    rdmsr
-    or eax, (1 << 8)     ; 设置LME位
-    wrmsr
-
-    ; 启用分页
-    mov eax, cr0
-    or eax, (1 << 31)    ; CR0.PG = 1
-    mov cr0, eax
-
-    ; 加载64位GDT并跳转
-    lgdt [gdt64_ptr]
-    jmp 0x08:long_mode_entry
+    call set_up_page_tables
+    call enable_paging
     
+    ; 加载64位GDT并跳转
+    lgdt [gdt64.pointer]
+
+    jmp gdt64.code:long_mode_entry
+
+
 bits 64
 extern kernel_main
 long_mode_entry:
     ; 更新段寄存器
-    mov ax, 0x10
+    mov ax, 0
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -89,51 +67,89 @@ long_mode_entry:
     mov ss, ax
 
     ; 调用64位内核主函数
-    mov edi, [mb_magic]  ; 传递multiboot参数
-    mov esi, [mbi_ptr]
     call kernel_main
     hlt
     
 bits 32
-setup_page_tables:
-    ; 初始化PML4
-    mov eax, pdp_table
-    or eax, 0x3          ; Present + Writable
-    mov [pml4_table], eax
+set_up_page_tables:
+    ; map P4 table recursively
+    mov eax, p4_table
+    or eax, 0x3 ; present + writable
+    mov [p4_table + 511 * 8], eax
 
-    ; 初始化PDP
-    mov eax, pd_table
-    or eax, 0x3
-    mov [pdp_table], eax
+    ; map first & 510th P4 entry to P3 table
+    mov eax, p3_table
+    or eax, 0x3 ; present + writable
+    mov [p4_table], eax
+    mov [p4_table + 510 * 8], eax
 
-    ; 初始化PD为1GB大页
-    mov ecx, 0
-    mov eax, 0x83        ; Present + Writable + LargePage
-    
-.set_pd_entries:
-    mov [pd_table + ecx * 8], eax
-    add eax, 0x40000000  ; 每个条目映射1GB
-    inc ecx
-    cmp ecx, 4           ; 映射前4GB内存
-    jl .set_pd_entries
+    ; map first P3 entry to P2 table
+    mov eax, p2_table
+    or eax, 0x3 ; present + writable
+    mov [p3_table], eax
 
-    ; 设置CR3指向PML4
-    mov eax, pml4_table
-    mov cr3, eax
+    ; map each P2 entry to a huge 2MiB page
+    mov ecx, 0         ; counter variable
+
+.map_p2_table:
+    ; map ecx-th P2 entry to a huge page that starts at address 2MiB*ecx
+    mov eax, 0x200000  ; 2MiB
+    mul ecx            ; start address of ecx-th page
+    or eax, 0b10000011 ; present + writable + huge
+    mov [p2_table + ecx * 8], eax ; map ecx-th entry
+
+    inc ecx            ; increase counter
+    cmp ecx, 512       ; if counter == 512, the whole P2 table is mapped
+    jne .map_p2_table  ; else map the next entry
+
     ret
     
+enable_paging:
+    ; load P4 to cr3 register (cpu uses this to access the P4 table)
+    mov eax, p4_table
+    mov cr3, eax
+
+    ; enable PAE-flag in cr4 (Physical Address Extension)
+    mov eax, cr4
+    or eax, 1 << 5
+    mov cr4, eax
+
+    ; set the long mode bit & no execute bit in the EFER MSR (model specific register)
+    mov ecx, 0xC0000080
+    rdmsr
+    or eax, 1 << 8 | 1 << 11
+    wrmsr
+
+    ; enable paging & write protect in the cr0 register
+    mov eax, cr0
+    or eax, 1 << 31 | 1 << 16
+    mov cr0, eax
+
+    ret
+        
 check_cpu:
+
     pushfd
     pop eax
+    
     mov ecx, eax
+    
     xor eax, 0x200000
+    
     push eax
     popfd
+    
     pushfd
     pop eax
-    xor eax, ecx
-    jz .unsupport_cpu
+    
+    push ecx
+    popfd
 
+    ; Compare EAX and ECX. If they are equal then that means the bit
+    ; wasn't flipped, and CPUID isn't supported.
+    cmp eax, ecx
+    je .unsupport_cpu
+    
     ; Check for extended CPUID
     mov eax, 0x80000000
     cpuid
@@ -150,23 +166,31 @@ check_cpu:
 
 .unsupport_cpu:
     ; Handling Unsupported CPU
-    hlt
-    jmp .unsupport_cpu
+    mov dword [0xb8000], 0x0f6e0f75  ; "un"
+    mov dword [0xb8004], 0x0f700f73  ; "sp"
+    mov dword [0xb8008], 0x0f6f0f70  ; "po"
+    mov dword [0xb800c], 0x0f740f72  ; "rt"
+    mov dword [0xb8010], 0x0f200f20  ; "  "
+    mov dword [0xb8014], 0x0f750f63  ; "cp"
+    mov dword [0xb8018], 0x0f000f75  ; "u" + 终止
 
 section .bss
 align 4096
-pml4_table:
+p4_table:
     resb 4096
-pdp_table:
+p3_table:
     resb 4096
-pd_table:
+p2_table:
     resb 4096
+stack_bottom:
+    resb 16384 ; 16KB stack, probably enough
+stack_top:
 
 section .rodata
 gdt64:
-    dq 0                         ; 空描述符
-    dq 0x0020980000000000        ; 代码段描述符 (执行/读, 64位)
-    dq 0x0000920000000000        ; 数据段描述符 (读/写)
-gdt64_ptr:
-    dw $ - gdt64 - 1             ; GDT长度-1
-    dq gdt64                     ; GDT基地址
+    dq 0 ; zero entry
+.code: equ $ - gdt64 ; new
+    dq (1<<43) | (1<<44) | (1<<47) | (1<<53) ; code segment
+.pointer:
+    dw $ - gdt64 - 1
+    dq gdt64
