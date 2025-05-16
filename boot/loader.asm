@@ -173,6 +173,7 @@ check_cpu:
     mov dword [0xb8010], 0x0f200f20  ; "  "
     mov dword [0xb8014], 0x0f750f63  ; "cp"
     mov dword [0xb8018], 0x0f000f75  ; "u" + 终止
+    hlt
 
 section .bss
 align 4096
