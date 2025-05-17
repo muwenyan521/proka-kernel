@@ -1,3 +1,15 @@
+//! Proka Kernel - A kernel for ProkaOS
+//! Copyright (C) RainSTR Studio 2025, All Rights Reserved.
+//!
+//! Well, welcome to the main entry of Proka Kernel!!
+//!
+//! If you have jumped here successfully, that means your CPU
+//! can satisfy our kernel's requirements.
+//! 
+//! Now, let's enjoy the kernel written in Rust!!!!
+//!
+//! For more information, see https://github.com/RainSTR-Studio/proka-kernel
+
 #![no_std]
 #![no_main]
 

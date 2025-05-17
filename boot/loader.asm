@@ -1,8 +1,8 @@
 ; Proka Kernel - A kernel for ProkaOS.
 ; Copyright (C) RainSTR Studio 2025, All Rights Reserved.
 ;
-; This file contains the header of multiboot2, which can
-; boot up by using GRUB.
+; This file contains the loader, which will switch to the long
+; mode, and jump to the kernel entry.
 
 ; The data section
 section .data
@@ -16,8 +16,8 @@ extern check_cpu
 bits 32
 global _start
 _start:
-    mov esp, stack_top
-    mov [mbi_ptr], ebx	; push Multiboot info pointer to stack_top
+    mov esp, stack_top	; Initialize the stack pointer
+    mov [mbi_ptr], ebx	; Save the EBX value and pass to the kernel later
     
     call check_multiboot ; Check is this boot uo by multiboot2
 
@@ -26,7 +26,7 @@ _start:
     call set_up_page_tables
     call enable_paging
     
-    ; 加载64位GDT并跳转
+    ; Load the 64-bit GDT and jump
     lgdt [gdt64.pointer]
 
     jmp gdt64.code:long_mode_entry

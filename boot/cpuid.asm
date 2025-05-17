@@ -1,10 +1,18 @@
+; Proka Kernel - A kernel for ProkaOS.
+; Copyright (C) RainSTR Studio 2025, All Rights Reserved.
+;
+; This file contains the checker of CPU, which will check up the
+; CPUID, Extention CPUID and Long mode support.
+;
+; If one is not passed, it won't run anymore 
+; (the check_cpu.unsupported_cpu will handle it) 
+
 section .text
 bits 32
 default rel
 global check_cpu
 
 check_cpu:
-    check_cpu:
     pushfd
     pop eax
 
