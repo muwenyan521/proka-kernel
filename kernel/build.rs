@@ -5,8 +5,8 @@
 
 // Import some modules
 use glob::glob;
-use std::process::Command; // For checking the .o file
 use std::path::Path;
+use std::process::Command; // For checking the .o file
 
 fn main() {
     // Get the workspace root
@@ -17,7 +17,7 @@ fn main() {
 
     let status = Command::new("make")
         .arg("-C")
-        .arg("..")  // Because the main Makefile is at ..
+        .arg("..") // Because the main Makefile is at ..
         .status()
         .expect("Cannot run command");
 
