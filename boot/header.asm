@@ -1,3 +1,9 @@
+; Proka Kernel - A kernel for ProkaOS.
+; Copyright (C) RainSTR Studio 2025, All Rights Reserved.
+;
+; This file contains the header of multiboot2, which can
+; boot up by using GRUB.
+
 ; Define a section "multiboot2"
 section .multiboot2
 align 8	   ; The alignment required
@@ -25,3 +31,4 @@ end_tag:
     dd 8	; Tag size
 
 end:
+
