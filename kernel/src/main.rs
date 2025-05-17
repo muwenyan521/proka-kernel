@@ -12,16 +12,15 @@
 
 #![no_std]
 #![no_main]
+#![feature(custom_test_frameworks)]
+#![test_runner(proka_kernel::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
-use core::panic::PanicInfo;
+#[cfg(not(test))]
 use multiboot2::{BootInformation, BootInformationHeader};
-#[macro_use] extern crate proka_kernel;
 
-#[panic_handler]
-fn panic(_: &PanicInfo) -> ! {
-    // x86_64::instructions::interrupts::int3();
-    loop {}
-}
+#[macro_use]
+extern crate proka_kernel;
 
 /* C functions extern area */
 extern_safe! {
@@ -30,6 +29,8 @@ extern_safe! {
 }
 
 /* The Kernel main code */
+// The normal one
+#[cfg(not(test))]
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
     // The magic number has checked in assmebly, so pass it.
@@ -48,5 +49,13 @@ pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
 
     // let test = safe_add(3, 5);
 
+    loop {}
+}
+
+// The test kernel entry
+#[cfg(test)]
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_main() -> ! {
+    test_main();
     loop {}
 }

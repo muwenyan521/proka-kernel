@@ -11,4 +11,6 @@ multiboot2 = { workspace = true }
 x86_64 = { workspace = true }
 lazy_static = { workspace = true }
 paste = { workspace = true }
+uart_16550 = { workspace = true }
+spin = { workspace = true }
 
