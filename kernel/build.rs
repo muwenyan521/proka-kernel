@@ -15,17 +15,26 @@ fn main() {
         .expect("CARGO_MANIFEST_DIR should be doubly nested in workspace")
         .to_path_buf();
 
-    let status = Command::new("make")
-        .arg("-C")
-        .arg("..") // Because the main Makefile is at ..
-        .status()
-        .expect("Cannot run command");
+    // Get the build profile
+    let profile = std::env::var("PROFILE").unwrap_or("unknown".to_string());
+
+    // Pass the basic arguments
+    let mut cmd = Command::new("make");
+    cmd.arg("-C");
+    cmd.arg(".."); // Because the main Makefile is at ..
+
+    // Check the building profile
+    match profile.as_str() {
+        "debug" => cmd.arg("debug"),
+        "release" => &mut cmd,
+        _ => panic!("Unknown profile type"),
+    };
+
+    let status = cmd.status().expect("Cannot run command");
 
     if !status.success() {
         panic!("Building C/ASM NOT successful");
     }
-
-    let _ = Command::new("pwd");
 
     // Tell Rust to link the ELF file generated
     println!("cargo:rustc-link-arg=-Tlinker.ld");

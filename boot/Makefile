@@ -7,6 +7,9 @@
 # The ASM source
 ASM_CODE := $(wildcard *.asm)
 
+# The compile mode flags
+ASM_MODE_FLAGS = $(if $(DEBUG),-g)
+
 # The object file
 OBJ_FILES := $(patsubst %.asm,$(OBJ_DIR)/%.o,$(ASM_CODE))
 
@@ -14,4 +17,4 @@ OBJ_FILES := $(patsubst %.asm,$(OBJ_DIR)/%.o,$(ASM_CODE))
 all: $(OBJ_FILES)
 
 $(OBJ_DIR)/%.o: %.asm
-	nasm -f elf64 $< -o $@ -g
+	nasm -f elf64 $< -o $@ $(ASM_MODE_FLAGS)
