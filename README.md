@@ -8,7 +8,7 @@ This project is for practise only, but we hope that it will use in stable enviro
 ## What language does it written?
 Well, if you have seen the *languages* part, you'll find **C, Assembly and Rust**. Yes, this is the language what does the Proka Kernel written.
 
-You know, **Rust** is the memory-safe language, so the kernel mainly written in Rust. Also, for some low-level operation and drivers, we uses **C and Rust** to do that.
+You know, **Rust** is the memory-safe language, so the kernel mainly written in Rust. Also, for some low-level operation and drivers, we uses **C and Assembly** to do that.
 
 Also, you will find that it also have **Python**. But why? Can Python write kernels? Of course no, but as a interpreted language, it is a script that can run, debug or do something else easily.
 
@@ -36,7 +36,7 @@ We suggest you use `rustup` to install Rust.
 If you're using Debian or Ubuntu, you can try:
 ```bash
 sudo apt-get install gcc nasm make     # Must install
-sudo apt-get install qemu-system-x86 parted grub-efi python3    # If you want to run the kernel in your OS
+sudo apt-get install qemu-system-x86 parted grub-efi-amd64 python3    # If you want to run the kernel in your OS
 ```
 
 ### Build
