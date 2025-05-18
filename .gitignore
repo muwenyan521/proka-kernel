@@ -6,3 +6,6 @@ mnt/*
 
 # Added by cargo
 /target
+
+scripts/font/*.ttf
+scripts/font/*.txt
