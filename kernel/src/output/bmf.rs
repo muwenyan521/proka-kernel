@@ -1,8 +1,9 @@
 extern crate alloc;
 use alloc::vec::Vec;
+use libm::ceil;
 use spin::Mutex;
 
-const DEFAULT_FONT_DATA: &[u8] = include_bytes!("../../fonts/default.bmp");
+const DEFAULT_FONT_DATA: &[u8] = include_bytes!("../../fonts/default.bmf");
 
 lazy_static::lazy_static! {
     pub static ref DEFAULT_FONT: Mutex<BMFParser> = Mutex::new(BMFParser::new(DEFAULT_FONT_DATA.to_vec()));
@@ -53,7 +54,7 @@ impl BMFParser {
 
     pub fn get_grayscale_image(&self, unicode: u32) -> Option<Vec<Vec<u8>>> {
         if let Some(char_data) = self.get_bytes(unicode) {
-            let bytes_per_line = ((self.font_size as f64 / 8.0) as f64).ceil() as usize;
+            let bytes_per_line = ceil((self.font_size as f64 / 8.0) as f64) as usize;
             let mut image =
                 alloc::vec![alloc::vec![0; self.font_size as usize]; self.font_size as usize];
             for y in 0..self.font_size as usize {

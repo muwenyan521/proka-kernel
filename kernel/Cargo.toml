@@ -13,4 +13,5 @@ lazy_static = { workspace = true }
 paste = { workspace = true }
 uart_16550 = { workspace = true }
 spin = { workspace = true }
-
+libm = { workspace = true }
+linked_list_allocator = { workspace = true }

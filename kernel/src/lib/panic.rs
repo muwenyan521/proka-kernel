@@ -1,0 +1,31 @@
+//! # Proka Kernel - A kernel for ProkaOS
+//! Copyright (C) RainSTR Studio 2025, All rights reserved.
+//!
+//! This provides the panic handler with tests and normal.
+
+use core::panic::PanicInfo;
+
+// This is the default panic handler
+#[cfg(not(test))]
+#[panic_handler]
+pub fn panic(_: &PanicInfo) -> ! {
+    //x86_64::instructions::interrupts::int3();
+    loop {}
+}
+
+// And this is for test
+#[cfg(test)]
+#[panic_handler]
+pub fn panic(info: &PanicInfo) -> ! {
+    // Call the default test panic handler
+    panic_for_test(info)
+}
+
+// This is the panic handler for all testing function
+#[cfg(test)]
+pub fn panic_for_test(info: &PanicInfo) -> ! {
+    serial_println!("failed");
+    serial_println!("Caused by:\n\t{}", info);
+    exit_qemu(QemuExitCode::Failed);
+    loop {} // Unreachable, but must write this
+}
