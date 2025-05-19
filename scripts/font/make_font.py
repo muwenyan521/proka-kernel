@@ -17,7 +17,7 @@ __version__ = "1.2"  # 版本更新为支持大哈希表
 """
 文件头 (24字节):
     [0:3]   魔数 0x0B 0x2D 0x0E
-    [3:6]   位图数据起始偏移 (大端序)
+    [3:6]   位图数据起始偏移 (小端序)
     [6]     字号
     [7]     单字符字节数
     [8:11]  哈希表起始偏移 (3B)
@@ -30,7 +30,11 @@ def get_im(word, width, height, font, offset: tuple = (0, 0)) -> Image.Image:
     draw = ImageDraw.Draw(im)
     draw.text(offset, word, font=font)
     return im
-    
+
+def is_empty_image(image: Image.Image) -> bool:
+    """检查图像是否为空（即没有任何像素被绘制）"""
+    return np.all(np.array(image) == 1)
+
 def to_bitmap(word: str, font_size: int, font, offset=(0, 0)) -> bytearray:
     """ 获取点阵字节数据"""
     code = 0x00
@@ -48,6 +52,8 @@ def to_bitmap(word: str, font_size: int, font, offset=(0, 0)) -> bytearray:
         (~np.asarray(get_im(word, width=font_size, height=font_size, font=font, offset=offset))).astype(np.int32),
         ((0, 0), (0, int(np.ceil(font_size / 8) * 8 - font_size))), 'constant',
         constant_values=(0, 0))
+    if word == "a":
+        print(bp)
     
     # 点阵映射 MONO_HLSB
     bmf = []
@@ -63,7 +69,7 @@ def generate_hash_table(words, start_bitmap, bytes_per_char):
     table_size = max(2 * len(words), 256)  # 允许超过65535
     hash_table = bytearray(table_size * 6)
     
-    for idx, word in enumerate(words):
+    for idx, word in tqdm(enumerate(words), desc="创建哈希表"):
         unicode = ord(word)
         slot = unicode % table_size
         
@@ -75,7 +81,6 @@ def generate_hash_table(words, start_bitmap, bytes_per_char):
         hash_table[slot*6+2:slot*6+6] = struct.pack("<I", offset)
         
     return hash_table
-    
 
 def run(font_file, font_size=16, offset=(0, -2), text_file=None, text=None, bitmap_fonts_name=None):
     font = ImageFont.truetype(font=font_file, size=font_size)
@@ -86,6 +91,16 @@ def run(font_file, font_size=16, offset=(0, -2), text_file=None, text=None, bitm
         with open(text_file, "r", encoding="utf-8") as f:
             words = list(set(f.read()))
     words.sort()
+    
+    # 过滤掉渲染为空的字符
+    filtered_words = []
+    for word in tqdm(words, desc="过滤空字符"):
+        image = get_im(word, width=font_size, height=font_size, font=font, offset=offset)
+        if not is_empty_image(image) or word == " ":
+            filtered_words.append(word)
+        #else:
+            # print(word, '为空')
+    words = filtered_words
     font_num = len(words)
     
     bytes_per_char = int(np.ceil(font_size / 8)) * font_size
@@ -108,17 +123,15 @@ def run(font_file, font_size=16, offset=(0, -2), text_file=None, text=None, bitm
         start_bitmap = f.tell()
         print(f"位图起始: 0x{start_bitmap:X}")
         
-        #bitmaps = bytearray()
         for w in tqdm(words, desc="生成位图"):
             f.write(to_bitmap(w, font_size, font, offset))
-        #f.write(bitmaps)
         
         hash_table = generate_hash_table(words, start_bitmap, bytes_per_char)
         hash_start = f.tell()
         f.write(hash_table)
         
         f.seek(3)
-        f.write(struct.pack("<I", start_bitmap)[1:4])
+        f.write(start_bitmap.to_bytes(3, byteorder='little'))
         
         f.seek(8)
         f.write(hash_start.to_bytes(3, byteorder='little'))
@@ -157,7 +170,7 @@ class BMFParser:
         :param foreground: 前景字符(默认实心方块)
         :param background: 背景字符(默认空格)
         """
-        char_data = self.get_char(unicode)
+        char_data = b'\xff\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\x81\x00\xff\x00'#self.get_char(unicode)
         if char_data is None:
             print(f"字符U+{unicode:04X}不存在")
             return
@@ -183,7 +196,6 @@ class BMFParser:
         if len(char) != 1:
             raise ValueError("只能打印单个字符")
         self.render_to_console(ord(char), foreground, background)
-                    
 
 def load_bmf(filename):
     with open(filename, "rb") as f:
@@ -199,13 +211,12 @@ if __name__ == "__main__":
     parser.add_argument("-bfn", "--bitmap-font-name")
     args = parser.parse_args()
     
-    
     bmf_file = run(args.font_file, args.font_size, 
                   text_file=args.text_file, 
                   text=args.text,
                   bitmap_fonts_name=args.bitmap_font_name)
     
-    #bmf_file = "MiSans-Normal-36615-16.bmf"
+    #bmf_file = "MiSans-Normal-21713-16.bmf"
     bmf = load_bmf(bmf_file)
     print("查找'中'字(0x4E2D):", bmf.get_char(0x4E2D))
-    bmf.print_char("c", "a")
+    bmf.print_char("\t")

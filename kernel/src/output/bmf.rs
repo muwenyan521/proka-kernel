@@ -1,76 +1,133 @@
-extern crate alloc;
-use alloc::vec::Vec;
-use libm::ceil;
-use spin::Mutex;
+use core::{fmt::Write, ptr};
+use multiboot2::FramebufferTag;
+use crate::output::bmf::{DEFAULT_FONT, BMFParser};
 
-const DEFAULT_FONT_DATA: &[u8] = include_bytes!("../../fonts/default.bmf");
-
-lazy_static::lazy_static! {
-    pub static ref DEFAULT_FONT: Mutex<BMFParser> = Mutex::new(BMFParser::new(DEFAULT_FONT_DATA.to_vec()));
+// 定义 Framebuffer 信息结构体 (repr(C) 确保内存布局兼容)
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FramebufferInfo {
+    addr: *mut u32,
+    width: u32,
+    height: u32,
+    pitch: u32,
+    bpp: u8,
+    red_shift: u8,
+    green_shift: u8,
+    blue_shift: u8,
 }
 
-pub struct BMFParser {
-    font_size: u8,
-    bytes_per_char: u8,
-    bitmap_start: usize,
-    hash_start: usize,
-    hash_slots: usize,
-    data: Vec<u8>,
-}
+impl FramebufferInfo {
+    /// 从 Multiboot2 信息解析 Framebuffer
+    pub unsafe fn from_multiboot(fb_tag: &FramebufferTag) -> Option<Self> {
+        // 确保像素格式是 RGB 32位
+        let (red_shift, green_shift, blue_shift) = match fb_tag.color_info {
+            multiboot2::ColorInfo::RGB { red, green, blue } => (
+                red.position.trailing_zeros() as u8,
+                green.position.trailing_zeros() as u8,
+                blue.position.trailing_zeros() as u8,
+            ),
+            _ => panic!("Unsupported color format"),
+        };
 
-impl BMFParser {
-    pub fn new(data: Vec<u8>) -> Self {
-        BMFParser {
-            font_size: data[6],
-            bytes_per_char: data[7],
-            bitmap_start: u32::from_le_bytes([data[3], data[4], data[5], 0]) as usize,
-            hash_start: u32::from_le_bytes([data[8], data[9], data[10], 0]) as usize,
-            hash_slots: u32::from_le_bytes([data[11], data[12], data[13], 0]) as usize,
-            data,
+        Some(Self {
+            addr: fb_tag.address() as *mut u32,
+            width: fb_tag.width(),
+            height: fb_tag.height(),
+            pitch: fb_tag.pitch(),
+            bpp: fb_tag.bpp(),
+            red_shift,
+            green_shift,
+            blue_shift,
+        })
+    }
+
+    /// 安全像素写入方法
+    #[inline]
+    pub fn put_pixel(&mut self, x: u32, y: u32, color: u32) {
+        if x >= self.width || y >= self.height {
+            return;
+        }
+        let offset = (y * (self.pitch / 4) + x) as isize;
+        unsafe {
+            ptr::write_volatile(self.addr.offset(offset), color);
         }
     }
 
-    pub fn get_bytes(&self, unicode: u32) -> Option<&[u8]> {
-        let mut slot = (unicode % self.hash_slots as u32) as usize;
-        let mut count = 0;
-        loop {
-            if count >= 50 {
-                // 防止死循环
-                return None;
-            }
-            let entry = &self.data[self.hash_start + slot * 6..self.hash_start + slot * 6 + 6];
-            let entry_unicode = u16::from_le_bytes([entry[0], entry[1]]);
-            let entry_offset = u32::from_le_bytes([entry[2], entry[3], entry[4], 0]) as usize;
+    /// 生成 RGB 颜色值
+    pub fn rgb(&self, r: u8, g: u8, b: u8) -> u32 {
+        ((r as u32) << self.red_shift) |
+        ((g as u32) << self.green_shift) |
+        ((b as u32) << self.blue_shift)
+    }
+}
 
-            if entry_unicode as u32 == unicode {
-                return Some(&self.data[entry_offset..entry_offset + self.bytes_per_char as usize]);
-            } else if entry_unicode == 0 {
-                return None;
-            }
-            slot = (slot + 1) % self.hash_slots;
-            count += 1;
+/// 位图字体渲染器
+pub struct BitmapFontRenderer {
+    fb: FramebufferInfo,
+    font: BMFParser,
+    fg_color: u32,
+    bg_color: u32,
+    cursor_x: u32,
+    cursor_y: u32,
+}
+
+impl BitmapFontRenderer {
+    pub fn new(fb: FramebufferInfo, font: BMFParser, fg: u32, bg: u32) -> Self {
+        Self {
+            fb,
+            font,
+            fg_color: fg,
+            bg_color: bg,
+            cursor_x: 0,
+            cursor_y: 0,
         }
     }
 
-    pub fn get_grayscale_image(&self, unicode: u32) -> Option<Vec<Vec<u8>>> {
-        if let Some(char_data) = self.get_bytes(unicode) {
-            let bytes_per_line = ceil((self.font_size as f64 / 8.0) as f64) as usize;
-            let mut image =
-                alloc::vec![alloc::vec![0; self.font_size as usize]; self.font_size as usize];
-            for y in 0..self.font_size as usize {
-                let line_byte = &char_data[y * bytes_per_line..(y + 1) * bytes_per_line];
-                let mut bits = Vec::new();
-                for &byte in line_byte {
-                    bits.extend((0..8).rev().map(|i| (byte >> i) & 1));
-                }
+    /// 绘制单个字符
+    pub fn draw_char(&mut self, c: char) {
+        let ascii = c as usize;
+        
+        let bitmap = match self.font.get_grayscale_image(ascii.try_into().unwrap()) {
+            Some(b) => b,
+            None => return,
+        };
 
-                for x in 0..self.font_size as usize {
-                    image[y][x] = if bits[x] == 1 { 255 } else { 0 };
-                }
+        let start_x = self.cursor_x;
+        let start_y = self.cursor_y;
+
+        for (y, row) in bitmap.iter().enumerate() {
+            for (x, &pixel) in row.iter().enumerate() {
+                let color = if pixel > 0 { // Check grayscale value
+                    self.fg_color
+                } else {
+                    self.bg_color
+                };
+                self.fb.put_pixel(
+                    start_x + x as u32,
+                    start_y + y as u32,
+                    color
+                );
             }
-            Some(image)
-        } else {
-            None
         }
+
+        self.cursor_x += self.font.font_size as u32;
+        if self.cursor_x >= self.fb.width - self.font.font_size as u32 {
+            self.cursor_x = 0;
+            self.cursor_y += self.font.font_size as u32;
+        }
+    }
+
+    /// 处理换行和文本渲染
+    pub fn write_str(&mut self, s: &str) -> Result<(), core::fmt::Error> {
+        for c in s.chars() {
+            match c {
+                '\n' => {
+                    self.cursor_x = 0;
+                    self.cursor_y += self.font.font_size as u32;
+                }
+                _ => self.draw_char(c),
+            }
+        }
+        Ok(())
     }
 }
