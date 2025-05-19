@@ -60,19 +60,25 @@ pub fn map_heap_mem(mapper: &mut impl Mapper<Size4KiB>, phys_start: u64) {
     let phys_start = PhysAddr::new(phys_start);
 
     // The end of the virtual memory
-    let virt_end = virt_start + HEAP_START as u64;
+    let virt_end = virt_start + HEAP_SIZE as u64;
+
+    // The start of the page
+    let page_start = Page::containing_address(virt_start);
+
+    // The end of the page
+    let page_end = Page::containing_address(virt_end - 1); // Avoid overflow
+
+    // The range of page
+    let page_range = Page::range_inclusive(page_start, page_end);
 
     // Initialize the frame allocator
     let mut frame_allocator = FrameAlloc::new(phys_start);
 
     // Check add address in heap
-    for addr in virt_start..virt_end {
-        // Get the page
-        let page = Page::containing_address(addr);
-
+    for page in page_range {
         // Get the frame
-        let phys_offset = addr.as_u64() - virt_start.as_u64(); // The virtual address offset
-        let frame_phys_addr = phys_start + phys_offset; // Physical + PhysBegin + offset
+        let page_offset = page - page_start;
+        let frame_phys_addr = phys_start + page_offset * Size4KiB::SIZE;
         let frame = PhysFrame::containing_address(frame_phys_addr); // Convert to PhysFrame
 
         // Set up the flag
