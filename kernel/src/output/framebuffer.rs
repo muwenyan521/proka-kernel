@@ -2,7 +2,7 @@ use core::{fmt::Write, ptr};
 use multiboot2::FramebufferTag;
 use crate::output::bmf::{DEFAULT_FONT, BMFParser};
 
-// 定义 Framebuffer 信息结构体 (repr(C) 确保内存布局兼容)
+// Define Framebuffer info struct
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct FramebufferInfo {
@@ -117,7 +117,7 @@ impl BitmapFontRenderer {
         }
     }
 
-    /// Handler texy rendering and next line
+    /// Handler text rendering and next line
     pub fn write_string(&mut self, s: &str) -> Result<(), core::fmt::Error> {
         for c in s.chars() {
             match c {
