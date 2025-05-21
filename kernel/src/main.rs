@@ -17,6 +17,7 @@
 #![reexport_test_harness_main = "test_main"]
 
 /* Module imports */
+use core::fmt::Write;
 #[cfg(not(test))]
 use multiboot2::{BootInformation, BootInformationHeader};
 
@@ -36,6 +37,8 @@ extern_safe! {
 pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
     // The magic number has checked in assmebly, so pass it.
 
+    serial_println!("Hello, ProkaOS!");
+
     /* Get the multiboot2 information */
     let boot_info =
         unsafe { BootInformation::load(mbi_ptr).expect("Failed to load BootInformation") };
@@ -48,11 +51,23 @@ pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
         Some(Err(_)) => panic!("Unknown framebuffer type"),
         None => panic!("No framebuffer tag"),
     };
+    serial_println!("Framebuffer initialized");
 
     /* Initialize the heap */
     proka_kernel::init_heap();
+    serial_println!("Heap initialized");
 
-    // let test = safe_add(3, 5);
+    // 初始化全局渲染器
+    crate::proka_kernel::output::framebuffer::init_global_render(&framebuffer);
+    serial_println!("Framebuffer renderer initialized");
+
+    // 新增屏幕输出代码
+    if let Some(render) = proka_kernel::output::framebuffer::get_render()
+        .lock()
+        .as_mut()
+    {
+        render.draw_char('H');
+    }
 
     loop {}
 }

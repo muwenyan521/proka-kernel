@@ -1,19 +1,26 @@
+use crate::{
+    output::bmf::{BMFParser, DEFAULT_FONT},
+    serial_println,
+};
 use core::{fmt::Write, ptr};
+use lazy_static::lazy_static;
 use multiboot2::FramebufferTag;
-use crate::output::bmf::{DEFAULT_FONT, BMFParser};
 
-// Define Framebuffer info struct
+unsafe impl Send for FramebufferInfo {}
+unsafe impl Sync for FramebufferInfo {}
+
+// 修改FramebufferInfo结构体字段可见性为pub
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct FramebufferInfo {
-    addr: *mut u32,
-    width: u32,
-    height: u32,
-    pitch: u32,
-    bpp: u8,
-    red_shift: u8,
-    green_shift: u8,
-    blue_shift: u8,
+    pub addr: *mut u32,
+    pub width: u32,
+    pub height: u32,
+    pub pitch: u32,
+    pub bpp: u8,
+    pub red_shift: u8,
+    pub green_shift: u8,
+    pub blue_shift: u8,
 }
 
 impl FramebufferInfo {
@@ -55,9 +62,9 @@ impl FramebufferInfo {
 
     /// Generate RGB color
     pub fn rgb(&self, r: u8, g: u8, b: u8) -> u32 {
-        ((r as u32) << self.red_shift) |
-        ((g as u32) << self.green_shift) |
-        ((b as u32) << self.blue_shift)
+        ((r as u32) << self.red_shift)
+            | ((g as u32) << self.green_shift)
+            | ((b as u32) << self.blue_shift)
     }
 }
 
@@ -97,16 +104,14 @@ impl BitmapFontRenderer {
 
         for (y, row) in bitmap.iter().enumerate() {
             for (x, &pixel) in row.iter().enumerate() {
-                let color = if pixel > 0 { // Check grayscale value
+                let color = if pixel > 0 {
+                    // Check grayscale value
                     self.fg_color
                 } else {
                     self.bg_color
                 };
-                self.fb.put_pixel(
-                    start_x + x as u32,
-                    start_y + y as u32,
-                    color
-                );
+                self.fb
+                    .put_pixel(start_x + x as u32, start_y + y as u32, color);
             }
         }
 
@@ -137,4 +142,23 @@ impl Write for BitmapFontRenderer {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         self.write_string(s)
     }
+}
+
+// 新增全局实例和初始化方法
+lazy_static! {
+    static ref RENDER: spin::Mutex<Option<BitmapFontRenderer>> = spin::Mutex::new(None);
+}
+
+pub fn init_global_render(fb_tag: &FramebufferTag) {
+    let fb_info = unsafe { FramebufferInfo::from_multiboot(fb_tag).unwrap() };
+    *RENDER.lock() = Some(BitmapFontRenderer::new(
+        fb_info,
+        DEFAULT_FONT.clone(),
+        0xffffffff,
+        0xff000000,
+    ));
+}
+
+pub fn get_render() -> &'static spin::Mutex<Option<BitmapFontRenderer>> {
+    &RENDER
 }

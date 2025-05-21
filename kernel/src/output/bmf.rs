@@ -7,11 +7,12 @@ use spin::Mutex;
 const DEFAULT_FONT_DATA: &[u8] = include_bytes!("../../fonts/default.bmf");
 
 lazy_static::lazy_static! {
-    pub static ref DEFAULT_FONT: Mutex<BMFParser> = Mutex::new(BMFParser::new(
+    pub static ref DEFAULT_FONT: BMFParser = BMFParser::new(
         DEFAULT_FONT_DATA.to_vec()
-    ));
+    );
 }
 
+#[derive(Debug, Clone)]
 pub struct BMFParser {
     pub font_size: u8,
     bytes_per_char: u8,
@@ -66,9 +67,7 @@ impl BMFParser {
     pub fn get_grayscale_image(&self, unicode: u32) -> Option<Vec<Vec<u8>>> {
         if let Some(char_data) = self.get_bytes(unicode) {
             let bytes_per_line = ceil((self.font_size as f64 / 8.0) as f64) as usize;
-            let mut image = alloc::vec![
-                alloc::vec![0; self.font_size as usize]
-            ];
+            let mut image = alloc::vec![alloc::vec![0; self.font_size as usize]];
 
             for y in 0..self.font_size as usize {
                 let line_start = y * bytes_per_line;
@@ -91,4 +90,3 @@ impl BMFParser {
         }
     }
 }
-

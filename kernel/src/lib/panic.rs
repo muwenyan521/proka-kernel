@@ -3,13 +3,15 @@
 //!
 //! This provides the panic handler with tests and normal.
 
+use crate::serial_println;
 use core::panic::PanicInfo;
 
 // This is the default panic handler
 #[cfg(not(test))]
 #[panic_handler]
-pub fn panic(_: &PanicInfo) -> ! {
+pub fn panic(info: &PanicInfo) -> ! {
     //x86_64::instructions::interrupts::int3();
+    serial_println!("{}", info);
     loop {}
 }
 
@@ -26,6 +28,6 @@ pub fn panic(info: &PanicInfo) -> ! {
 pub fn panic_for_test(info: &PanicInfo) -> ! {
     serial_println!("failed");
     serial_println!("Caused by:\n\t{}", info);
-    exit_qemu(QemuExitCode::Failed);
+    // exit_qemu(QemuExitCode::Failed);
     loop {} // Unreachable, but must write this
 }
