@@ -12,10 +12,10 @@ use x86_64::{PhysAddr, VirtAddr};
 
 /* First, declare the heap's start and size */
 /// The beginning address of the heap.
-const HEAP_START: usize = 0x100000;
+const HEAP_START: usize = 0x105000;
 
 /// The size of the heap.
-const HEAP_SIZE: usize = 16 * 1024 * 1024; // 16M available
+const HEAP_SIZE: usize = 64 * 1024 * 1024; // 16M available
 
 /* Then, declare an global allocator */
 #[global_allocator]

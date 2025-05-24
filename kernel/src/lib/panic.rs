@@ -10,8 +10,8 @@ use core::panic::PanicInfo;
 #[cfg(not(test))]
 #[panic_handler]
 pub fn panic(info: &PanicInfo) -> ! {
-    //x86_64::instructions::interrupts::int3();
     serial_println!("{}", info);
+    x86_64::instructions::interrupts::int3();
     loop {}
 }
 

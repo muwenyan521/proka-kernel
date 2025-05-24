@@ -17,7 +17,6 @@
 #![reexport_test_harness_main = "test_main"]
 
 /* Module imports */
-use core::fmt::Write;
 #[cfg(not(test))]
 use multiboot2::{BootInformation, BootInformationHeader};
 
@@ -57,7 +56,7 @@ pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
     proka_kernel::init_heap();
     serial_println!("Heap initialized");
 
-    // 初始化全局渲染器
+    /* Initialize the global renderer */
     crate::proka_kernel::output::framebuffer::init_global_render(&framebuffer);
     serial_println!("Framebuffer renderer initialized");
 
