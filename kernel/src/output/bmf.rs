@@ -2,28 +2,27 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use libm::ceil;
-use spin::Mutex;
 
 const DEFAULT_FONT_DATA: &[u8] = include_bytes!("../../fonts/default.bmf");
 
 lazy_static::lazy_static! {
-    pub static ref DEFAULT_FONT: BMFParser = BMFParser::new(
-        DEFAULT_FONT_DATA.to_vec()
+    pub static ref DEFAULT_FONT: BMFParser<'static> = BMFParser::new(
+        DEFAULT_FONT_DATA
     );
 }
 
 #[derive(Debug, Clone)]
-pub struct BMFParser {
+pub struct BMFParser<'a> {
     pub font_size: u8,
     bytes_per_char: u8,
     bitmap_start: usize,
     hash_start: usize,
     hash_slots: usize,
-    data: Vec<u8>,
+    data: &'a [u8],
 }
 
-impl BMFParser {
-    pub fn new(data: Vec<u8>) -> Self {
+impl<'a> BMFParser<'a> {
+    pub fn new(data: &'a [u8]) -> Self {
         BMFParser {
             font_size: data[6],
             bytes_per_char: data[7],
@@ -67,7 +66,7 @@ impl BMFParser {
     pub fn get_grayscale_image(&self, unicode: u32) -> Option<Vec<Vec<u8>>> {
         if let Some(char_data) = self.get_bytes(unicode) {
             let bytes_per_line = ceil((self.font_size as f64 / 8.0) as f64) as usize;
-            let mut image = alloc::vec![alloc::vec![0; self.font_size as usize]];
+            let mut image = alloc::vec![alloc::vec![0; self.font_size as usize]; self.font_size as usize];
 
             for y in 0..self.font_size as usize {
                 let line_start = y * bytes_per_line;
@@ -80,7 +79,7 @@ impl BMFParser {
                 }
 
                 for x in 0..self.font_size as usize {
-                    image[y][x] = if bits[x] == 1 { 255 } else { 0 };
+                    image [y][x] = if bits[x] == 1 { 255 } else { 0 };
                 }
             }
 

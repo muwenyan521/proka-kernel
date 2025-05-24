@@ -69,17 +69,17 @@ impl FramebufferInfo {
 }
 
 /// 位图字体渲染器
-pub struct BitmapFontRenderer {
+pub struct BitmapFontRenderer<'a> {
     fb: FramebufferInfo,
-    font: BMFParser,
+    font: BMFParser<'a>,
     fg_color: u32,
     bg_color: u32,
     cursor_x: u32,
     cursor_y: u32,
 }
 
-impl BitmapFontRenderer {
-    pub fn new(fb: FramebufferInfo, font: BMFParser, fg: u32, bg: u32) -> Self {
+impl<'a> BitmapFontRenderer<'a> {
+    pub fn new(fb: FramebufferInfo, font: BMFParser<'a>, fg: u32, bg: u32) -> Self {
         Self {
             fb,
             font,
@@ -138,7 +138,7 @@ impl BitmapFontRenderer {
 }
 
 // Implement the Write struct
-impl Write for BitmapFontRenderer {
+impl Write for BitmapFontRenderer<'_> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         self.write_string(s)
     }
@@ -146,7 +146,7 @@ impl Write for BitmapFontRenderer {
 
 // 新增全局实例和初始化方法
 lazy_static! {
-    static ref RENDER: spin::Mutex<Option<BitmapFontRenderer>> = spin::Mutex::new(None);
+    static ref RENDER: spin::Mutex<Option<BitmapFontRenderer<'static>>> = spin::Mutex::new(None);
 }
 
 pub fn init_global_render(fb_tag: &FramebufferTag) {
@@ -159,6 +159,6 @@ pub fn init_global_render(fb_tag: &FramebufferTag) {
     ));
 }
 
-pub fn get_render() -> &'static spin::Mutex<Option<BitmapFontRenderer>> {
+pub fn get_render() -> &'static spin::Mutex<Option<BitmapFontRenderer<'static>>> {
     &RENDER
 }
