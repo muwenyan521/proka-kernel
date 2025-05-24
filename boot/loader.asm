@@ -64,12 +64,12 @@ set_up_page_tables:
     or eax, 0x3 ; present + writable
     mov [p3_table], eax
 
-    ; map each P2 entry to a huge 2MiB page
+    ; map each P2 entry to a 4KiB page
     mov ecx, 0         ; counter variable
 
 .map_p2_table:
     ; map ecx-th P2 entry to a huge page that starts at address 2MiB*ecx
-    mov eax, 0x200000  ; 2MiB
+    mov eax, 0x1000  ; 4KiB
     mul ecx            ; start address of ecx-th page
     or eax, 0b10000011 ; present + writable + huge
     mov [p2_table + ecx * 8], eax ; map ecx-th entry
