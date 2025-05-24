@@ -97,7 +97,7 @@ pub fn map_heap_mem(mapper: &mut impl Mapper<Size4KiB>, phys_start: u64) {
 pub fn init_heap() {
     unsafe {
         // Initialize locked heap
-         let mut guard = ALLOCATOR.0.lock(); // Get lock
+        let mut guard = ALLOCATOR.0.lock(); // Get lock
         *guard = LockedHeap::new(HEAP_START, HEAP_SIZE);
     }
 }

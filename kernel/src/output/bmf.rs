@@ -66,7 +66,8 @@ impl<'a> BMFParser<'a> {
     pub fn get_grayscale_image(&self, unicode: u32) -> Option<Vec<Vec<u8>>> {
         if let Some(char_data) = self.get_bytes(unicode) {
             let bytes_per_line = ceil((self.font_size as f64 / 8.0) as f64) as usize;
-            let mut image = alloc::vec![alloc::vec![0; self.font_size as usize]; self.font_size as usize];
+            let mut image =
+                alloc::vec![alloc::vec![0; self.font_size as usize]; self.font_size as usize];
 
             for y in 0..self.font_size as usize {
                 let line_start = y * bytes_per_line;
@@ -79,7 +80,7 @@ impl<'a> BMFParser<'a> {
                 }
 
                 for x in 0..self.font_size as usize {
-                    image [y][x] = if bits[x] == 1 { 255 } else { 0 };
+                    image[y][x] = if bits[x] == 1 { 255 } else { 0 };
                 }
             }
 
