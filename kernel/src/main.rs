@@ -53,8 +53,12 @@ pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
     serial_println!("Framebuffer initialized");
 
     /* Initialize the heap */
-    proka_kernel::init_heap();
+    proka_kernel::allocator::init_heap();
     serial_println!("Heap initialized");
+
+    /* Initialize the mapper */
+    proka_kernel::mapper::init_memory_mapper();
+    serial_println!("Memory mapper initialized");
 
     /* Initialize the global renderer */
     crate::proka_kernel::output::framebuffer::init_global_render(&framebuffer);

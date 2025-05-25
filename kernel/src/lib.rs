@@ -11,13 +11,12 @@
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 pub mod interrupts;
+pub mod memory;
 pub mod output;
-mod lib {
-    pub mod memory;
-    pub mod panic;
-    pub mod test;
-}
-pub use crate::lib::{memory::*, panic::*, test::*};
+pub mod panic;
+pub mod test;
+
+pub use crate::{memory::*, panic::*, test::*};
 
 /// This will extern the C function and make it to safe.
 ///

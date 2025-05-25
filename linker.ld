@@ -8,11 +8,6 @@ SECTIONS {
         KEEP(*(.multiboot2))
     }
 
-    /* PVH note sections */
-    .note.pvh : {
-        KEEP(*(.note.pvh))
-    }
-
     /* Other sections */
     .text : { *(.text) }
     .data : { *(.data) }
