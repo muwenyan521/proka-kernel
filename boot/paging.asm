@@ -6,6 +6,8 @@ p3_table:
     resb 4096
 p2_table:
     resb 4096
+p1_tables:
+    resb 512 * 4096	; 512 P1 tables
 
 section .text
 bits 32
@@ -32,18 +34,39 @@ set_up_page_tables:
     mov ecx, 0         ; counter variable
 
 .map_p2_table:
-    ; map ecx-th P2 entry to a huge page that starts at address 2MiB*ecx
-    mov eax, 0x200000  ; 2MiB
-    mul ecx            ; start address of ecx-th page
-    or eax, 0b10000011 ; present + writable + huge
-    mov [p2_table + ecx * 8], eax ; map ecx-th entry
+    ; Compute the current P1: p1_tables + ecx * 4096
+    mov eax, p1_tables          ; P1 table array base addr
+    mov ebx, ecx
+    shl ebx, 12                 ; ebx = ecx * 4096 (each P1 table needs 4KB)
+    add eax, ebx                ; eax = The physical addr in P1
+    or eax, 0x3                 ; Present + Writable
+    mov [p2_table + ecx*8], eax ; Write to the ecx-th of P2
 
-    inc ecx            ; increase counter
-    cmp ecx, 512       ; if counter == 512, the whole P2 table is mapped
-    jne .map_p2_table  ; else map the next entry
+    ; Fill the 512 indexes of the current P1 (map 4KiB page)
+    mov edi, eax                ; edi point at the current P1
+    and edi, 0xFFFFF000         ; Clean the low addr and stay the physical address
+    mov ebx, 0                  ; P1 table index (0~511)
+
+.map_p1_table:
+    ; Compute physical addr: (ecx * 2MB) + (ebx * 4KB)
+    mov eax, ecx
+    shl eax, 21                 ; eax = ecx * 2MB (Every P1 table manages 2MiB space)
+    mov edx, ebx
+    shl edx, 12                 ; edx = ebx * 4KB
+    add eax, edx                ; eax = Final physical addr
+    or eax, 0x3                 ; Present + Writable
+    mov [edi + ebx*8], eax      ; Write to the ebx-th of P1
+
+    inc ebx
+    cmp ebx, 512
+    jl .map_p1_table
+
+    inc ecx
+    cmp ecx, 512
+    jl .map_p2_table
 
     ret
-    
+
 enable_paging:
     ; load P4 to cr3 register (cpu uses this to access the P4 table)
     mov eax, p4_table
