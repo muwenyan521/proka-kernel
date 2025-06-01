@@ -54,11 +54,8 @@ impl FramebufferInfo {
         let offset = (y * (self.pitch / 4) + x) as isize;
 
         /* Map the memory */
-        let virtual_addr = self.addr + 0x1000;
-        crate::mapper::map_physical_page(
-            self.addr,
-            virtual_addr,
-        );
+        let virtual_addr = self.addr + 0x100000;
+        crate::mapper::map_physical_page(self.addr, virtual_addr);
 
         unsafe {
             ptr::write_volatile((virtual_addr as *mut u32).offset(offset), color);

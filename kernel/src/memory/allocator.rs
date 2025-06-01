@@ -13,7 +13,7 @@ use spin::Mutex;
 const HEAP_START: usize = 0x105000;
 
 /// The size of the heap.
-const HEAP_SIZE: usize = 64 * 1024 * 1024; // 16M available
+const HEAP_SIZE: usize = 64 * 1024 * 1024; // 64M available
 
 /* Then, declare an global allocator */
 #[global_allocator]

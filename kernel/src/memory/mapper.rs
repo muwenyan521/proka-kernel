@@ -1,102 +1,148 @@
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use multiboot2::{MemoryAreaType, MemoryMapTag};
+use spin::{Mutex, Once}; // For safe global initialization
 use x86_64::structures::paging::*;
 use x86_64::{PhysAddr, VirtAddr};
 
-// Global static variable to store memory mapper
-static mut MEMORY_MAPPER: Option<MemoryMapper> = None;
+// Global frame allocator (safe initialization)
+static FRAME_ALLOCATOR: Once<LockedFrameAllocator> = Once::new();
 
-const FRAME_BITMAP_SIZE: usize = 1024 * 1024 / 4096 / 8; // 1MB size
+// Global memory mapper (safe initialization)
+static MEMORY_MAPPER: Once<LockedMemoryMapper> = Once::new();
 
-static mut FRAME_BITMAP: [u8; FRAME_BITMAP_SIZE] = [0; FRAME_BITMAP_SIZE];
-static mut NEXT_FREE_FRAME: usize = 0;
+/// Initialize the global frame allocator
+pub fn init_frame_allocator(memmap: &MemoryMapTag) {
+    FRAME_ALLOCATOR.call_once(|| LockedFrameAllocator::new(memmap));
+}
 
-/// The initializer of the memory mapper (single)
-pub fn init_memory_mapper() {
-    unsafe {
-        MEMORY_MAPPER = Some(MemoryMapper::new());
+/// Initialize the global memory mapper
+pub fn init_memory_mapper(physical_memory_offset: VirtAddr) {
+    MEMORY_MAPPER.call_once(|| LockedMemoryMapper::new(physical_memory_offset));
+}
+
+/// Map physical page address to virtual address
+pub fn map_physical_page(physical_addr: u64, virtual_addr: u64) {
+    if let Some(mapper) = MEMORY_MAPPER.get() {
+        mapper.lock().map_page(
+            physical_addr,
+            virtual_addr,
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        );
     }
 }
 
-/// Map physical page address to the virtual one ()single
-pub fn map_physical_page(physical_addr: u64, virtual_addr: u64) {
-    unsafe {
-        if let Some(ref mut mapper) = MEMORY_MAPPER {
-            mapper.map_page(physical_addr, virtual_addr, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+/* Frame Allocator with locking */
+pub struct LockedFrameAllocator {
+    inner: Mutex<FrameAlloc>,
+}
+
+impl LockedFrameAllocator {
+    /// Create a new frame allocator from memory map
+    pub fn new(mmap_tag: &MemoryMapTag) -> Self {
+        let frame_alloc = FrameAlloc::init(mmap_tag);
+        LockedFrameAllocator {
+            inner: Mutex::new(frame_alloc),
         }
     }
+
+    /// Lock the allocator for frame allocation
+    pub fn lock(&self) -> spin::MutexGuard<FrameAlloc> {
+        self.inner.lock()
+    }
 }
 
-/* The frame allocator */
-pub struct FrameAlloc;
+/* The actual frame allocator implementation */
+pub struct FrameAlloc {
+    frames: Vec<PhysFrame>,
+}
 
 impl FrameAlloc {
-    /// Initialize the physical frame
-    pub fn init(&mut self) {
-        unsafe {
-            // Initialize all the bitmap
-            FRAME_BITMAP = [0; FRAME_BITMAP_SIZE];
-            NEXT_FREE_FRAME = 0;
+    /// Initialize the physical frame allocator
+    pub fn init(mmap_tag: &MemoryMapTag) -> Self {
+        // Get all available memory regions
+        let available_regions = mmap_tag
+            .memory_areas()
+            .into_iter()
+            .filter(|area| area.typ() == MemoryAreaType::Available)
+            .filter(|area| area.start_address() >= 0x100000);
+
+        let mut frames = Vec::new();
+
+        // Convert each available region to physical frames
+        for region in available_regions {
+            let start_frame = PhysFrame::containing_address(PhysAddr::new(region.start_address()));
+            let end_frame = PhysFrame::containing_address(PhysAddr::new(region.end_address() - 1));
+
+            for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
+                frames.push(frame);
+            }
         }
-    }
 
-    fn frame_to_bit(frame: PhysFrame<Size4KiB>) -> usize {
-        frame.start_address().as_u64() as usize / Size4KiB::SIZE as usize
-    }
+        // Optional: Randomize frame order for security
+        // frames.shuffle(&mut rand::thread_rng());
 
-    fn bit_to_frame(bit: usize) -> PhysFrame<Size4KiB> {
-        PhysFrame::from_start_address(PhysAddr::new(bit as u64 * Size4KiB::SIZE)).unwrap()
+        FrameAlloc { frames }
     }
 }
 
+// Implement FrameAllocator trait for FrameAlloc
 unsafe impl FrameAllocator<Size4KiB> for FrameAlloc {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        unsafe {
-            // Search for next free frame
-            while NEXT_FREE_FRAME < FRAME_BITMAP_SIZE * 8 {
-                let byte = NEXT_FREE_FRAME / 8;
-                let bit = NEXT_FREE_FRAME % 8;
-                if (FRAME_BITMAP[byte] & (1 << bit)) == 0 {
-                    // Assign it to allocated
-                    FRAME_BITMAP[byte] |= 1 << bit;
-                    let frame = Self::bit_to_frame(NEXT_FREE_FRAME);
-                    NEXT_FREE_FRAME += 1;
-                    return Some(frame);
-                }
-                NEXT_FREE_FRAME += 1;
-            }
-            None // No free frame
-        }
+        self.frames.pop()
     }
 }
 
-/// The memory mapper manager
-pub struct MemoryMapper<'a> {
-    mapper: OffsetPageTable<'a>,
+/* Thread-safe memory mapper */
+pub struct LockedMemoryMapper {
+    inner: spin::Mutex<MemoryMapper>,
 }
 
-impl MemoryMapper<'_> {
-    /// Initialize the memory mapper
-    pub fn new() -> Self {
-        let physical_memory_offset = VirtAddr::new(0x100000); // Offsets
-
+impl LockedMemoryMapper {
+    /// Create a new memory mapper
+    pub fn new(physical_memory_offset: VirtAddr) -> Self {
+        // Get level 4 table pointer from physical memory offset
         let level_4_table_ptr = physical_memory_offset.as_ptr::<PageTable>() as *mut PageTable;
-        let level_4_table = unsafe { &mut *(level_4_table_ptr as *mut PageTable) };
 
-        MemoryMapper {
-            mapper: unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) },
+        // SAFETY: This is safe during early boot when we're setting up paging
+        let level_4_table = unsafe { &mut *level_4_table_ptr };
+
+        // Create OffsetPageTable
+        let mapper = unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) };
+
+        LockedMemoryMapper {
+            inner: spin::Mutex::new(MemoryMapper { mapper }),
         }
     }
 
-    /// Map the physical page address to the virtual address
+    /// Lock the mapper for page table operations
+    pub fn lock(&self) -> spin::MutexGuard<MemoryMapper> {
+        self.inner.lock()
+    }
+}
+
+/* The actual memory mapper implementation */
+pub struct MemoryMapper {
+    mapper: OffsetPageTable<'static>,
+}
+
+impl MemoryMapper {
+    /// Map a physical address to a virtual address
     pub fn map_page(&mut self, physical_addr: u64, virtual_addr: u64, flags: PageTableFlags) {
         let page = Page::<Size4KiB>::containing_address(VirtAddr::new(virtual_addr));
         let frame = PhysFrame::containing_address(PhysAddr::new(physical_addr));
-        let mut frame_allocator = FrameAlloc;
-        frame_allocator.init();
+
+        // Get global frame allocator
+        let frame_alloc = FRAME_ALLOCATOR
+            .get()
+            .expect("Frame allocator not initialized");
+        let mut frame_allocator = frame_alloc.lock();
 
         unsafe {
             self.mapper
-                .map_to(page, frame, flags, &mut frame_allocator)
-                .unwrap()
+                .map_to(page, frame, flags, &mut *frame_allocator)
+                .expect("Mapping failed")
                 .flush();
         }
     }

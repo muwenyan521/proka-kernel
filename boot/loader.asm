@@ -60,7 +60,7 @@ check_multiboot:
 section .bss
 align 4096
 stack_bottom:
-    resb 16384 ; 16KB stack, probably enough
+    resb 1048576 ; 1MB stack, probably enough
 stack_top:
 
 section .rodata

@@ -17,11 +17,13 @@
 #![reexport_test_harness_main = "test_main"]
 
 /* Module imports */
-#[cfg(not(test))]
-use multiboot2::{BootInformation, BootInformationHeader};
-
 #[macro_use]
 extern crate proka_kernel;
+extern crate alloc;
+
+#[cfg(not(test))]
+use multiboot2::{BootInformation, BootInformationHeader};
+use x86_64::VirtAddr;
 
 /* C functions extern area */
 extern_safe! {
@@ -45,26 +47,41 @@ pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
     /* Get the framebuffer tag */
     // In multiboot2 crate, the "info.framebuffer_tag()" will
     // return a Some(Ok(framebuffer)), so use "match" to handle.
-    let framebuffer = match boot_info.framebuffer_tag() {
+    let binding = &boot_info.framebuffer_tag();
+    let framebuffer = match binding {
         Some(Ok(tag)) => tag,
         Some(Err(_)) => panic!("Unknown framebuffer type"),
         None => panic!("No framebuffer tag"),
     };
-    serial_println!("Framebuffer initialized");
+
+    /* Get the memory map tag */
+    let memmap = &boot_info.memory_map_tag().unwrap();
+
+    serial_println!("Boot info initialized");
+
+    /* Enable the configured IDT */
+    proka_kernel::interrupts::idt::init_idt();
+    serial_println!("IDT initialized");
 
     /* Initialize the heap */
     proka_kernel::allocator::init_heap();
     serial_println!("Heap initialized");
 
     /* Initialize the mapper */
-    proka_kernel::mapper::init_memory_mapper();
+    // Initialize frame allocator first
+    proka_kernel::mapper::init_frame_allocator(memmap);
+    serial_println!("Frame allocator initialized");
+
+    // Then initialize memory mapper with physical offset
+    let physical_memory_offset = VirtAddr::new(0xFFFF_8000_0000_0000); // Common higher-half offset
+    proka_kernel::mapper::init_memory_mapper(physical_memory_offset);
     serial_println!("Memory mapper initialized");
 
     /* Initialize the global renderer */
     crate::proka_kernel::output::framebuffer::init_global_render(&framebuffer);
     serial_println!("Framebuffer renderer initialized");
 
-    // 新增屏幕输出代码
+    // The output code for screen
     if let Some(render) = proka_kernel::output::framebuffer::get_render()
         .lock()
         .as_mut()

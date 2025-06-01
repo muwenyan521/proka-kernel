@@ -9,6 +9,7 @@ lazy_static! {
         // 设置默认处理器中断
         idt.divide_error.set_handler_fn(error_handler::divide_error_handler);
         idt.breakpoint.set_handler_fn(error_handler::breakpoint_handler);
+        idt.page_fault.set_handler_fn(error_handler::pagefault_handler);
         idt
     };
 }
