@@ -1,7 +1,4 @@
-use crate::{
-    output::bmf::{BMFParser, DEFAULT_FONT},
-    serial_println,
-};
+use crate::output::bmf::{BMFParser, DEFAULT_FONT};
 use core::{fmt::Write, ptr};
 use lazy_static::lazy_static;
 use multiboot2::FramebufferTag;
@@ -13,7 +10,7 @@ unsafe impl Sync for FramebufferInfo {}
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct FramebufferInfo {
-    pub addr: *mut u32,
+    pub addr: u64,
     pub width: u32,
     pub height: u32,
     pub pitch: u32,
@@ -37,7 +34,7 @@ impl FramebufferInfo {
         };
 
         Some(Self {
-            addr: fb_tag.address() as *mut u32,
+            addr: fb_tag.address(),
             width: fb_tag.width(),
             height: fb_tag.height(),
             pitch: fb_tag.pitch(),
@@ -55,8 +52,13 @@ impl FramebufferInfo {
             return;
         }
         let offset = (y * (self.pitch / 4) + x) as isize;
+
+        /* Map the memory */
+        let virtual_addr = self.addr + 0x100000;
+        crate::mapper::map_physical_page(self.addr, virtual_addr);
+
         unsafe {
-            ptr::write_volatile(self.addr.offset(offset), color);
+            ptr::write_volatile((virtual_addr as *mut u32).offset(offset), color);
         }
     }
 
