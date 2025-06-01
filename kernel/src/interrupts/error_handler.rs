@@ -11,7 +11,10 @@ pub extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFram
     loop {}
 }
 
-pub extern "x86-interrupt" fn pagefault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
+pub extern "x86-interrupt" fn pagefault_handler(
+    stack_frame: InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
     serial_println!("EXCEPTION: PAGE FAULT\n{:#?}", stack_frame);
     loop {}
 }

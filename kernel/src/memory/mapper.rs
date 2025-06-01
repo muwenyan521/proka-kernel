@@ -3,6 +3,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use multiboot2::{MemoryAreaType, MemoryMapTag};
 use spin::{Mutex, Once}; // For safe global initialization
+use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::*;
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -29,6 +30,18 @@ pub fn map_physical_page(physical_addr: u64, virtual_addr: u64) {
             physical_addr,
             virtual_addr,
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        );
+    }
+}
+
+/// Map continuous physical address to virtual address
+pub fn map_continuous_page(physical_base: u64, virtual_base: u64, size: u64) {
+    if let Some(mapper) = MEMORY_MAPPER.get() {
+        mapper.lock().map_continuous_memory(
+            physical_base,
+            virtual_base,
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+            size
         );
     }
 }
@@ -103,7 +116,10 @@ impl LockedMemoryMapper {
     /// Create a new memory mapper
     pub fn new(physical_memory_offset: VirtAddr) -> Self {
         // Get level 4 table pointer from physical memory offset
-        let level_4_table_ptr = physical_memory_offset.as_ptr::<PageTable>() as *mut PageTable;
+        let (level_4_table_frame, _) = Cr3::read();
+        let level_4_table_phys = level_4_table_frame.start_address();
+        let level_4_table_virt = physical_memory_offset + level_4_table_phys.as_u64();
+        let level_4_table_ptr = level_4_table_virt.as_mut_ptr::<PageTable>();
 
         // SAFETY: This is safe during early boot when we're setting up paging
         let level_4_table = unsafe { &mut *level_4_table_ptr };
@@ -144,6 +160,21 @@ impl MemoryMapper {
                 .map_to(page, frame, flags, &mut *frame_allocator)
                 .expect("Mapping failed")
                 .flush();
+        }
+    }
+
+    /// Map the continuous physical addr to virtual one
+    pub fn map_continuous_memory(&mut self, virt_base: u64, phys_base: u64, flags: PageTableFlags, size: u64) {
+        let mut virt_addr = virt_base;
+        let mut phys_addr = phys_base;
+        let page_size = 4096;   // 4KiB page
+
+        // Compute the page should map
+        for _ in 0..(size + page_size - 1) / page_size {
+            self.map_page(phys_addr, virt_addr, flags);
+
+            virt_addr = virt_addr + page_size;
+            phys_addr = phys_addr + page_size;
         }
     }
 }

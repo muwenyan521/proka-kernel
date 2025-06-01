@@ -10,7 +10,8 @@ unsafe impl Sync for FramebufferInfo {}
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct FramebufferInfo {
-    pub addr: u64,
+    pub virt_addr: u64, // The virtual base addr after mapped
+    pub phys_addr: u64, // The physical base addr
     pub width: u32,
     pub height: u32,
     pub pitch: u32,
@@ -18,6 +19,7 @@ pub struct FramebufferInfo {
     pub red_shift: u8,
     pub green_shift: u8,
     pub blue_shift: u8,
+    pub memory_size: u64, // Total bytes of the framebuffer
 }
 
 impl FramebufferInfo {
@@ -32,33 +34,43 @@ impl FramebufferInfo {
             ),
             _ => panic!("Unsupported color format"),
         };
+        let memory_size = (fb_tag.height() * fb_tag.pitch()) as u64;
+        let virt_addr = 0xFFFF_8000_0000_0000;
+        crate::mapper::map_continuous_page(virt_addr, fb_tag.address(), memory_size);
 
         Some(Self {
-            addr: fb_tag.address(),
+            phys_addr: fb_tag.address(),
             width: fb_tag.width(),
             height: fb_tag.height(),
             pitch: fb_tag.pitch(),
             bpp: fb_tag.bpp(),
+            virt_addr,
             red_shift,
             green_shift,
             blue_shift,
+            memory_size,
         })
     }
 
     /// Safe put pixel method
     #[inline]
-    pub fn put_pixel(&mut self, x: u32, y: u32, color: u32) {
+    pub fn put_pixel(&self, x: u32, y: u32, color: u32) {
         if x >= self.width || y >= self.height {
             return;
         }
-        let offset = (y * (self.pitch / 4) + x) as isize;
 
-        /* Map the memory */
-        let virtual_addr = self.addr + 0x100000;
-        crate::mapper::map_physical_page(self.addr, virtual_addr);
+        // Compute bytes offsets
+        let byte_offset = (y as u64 * self.pitch as u64) + (x as u64 * (self.bpp / 8) as u64);
+
+        // Check the offset is over the mapping range
+        if byte_offset >= self.memory_size {
+            return;
+        }
 
         unsafe {
-            ptr::write_volatile((virtual_addr as *mut u32).offset(offset), color);
+            // Use the mapped virt addr
+            let ptr = (self.virt_addr + byte_offset) as *mut u32;
+            ptr::write_volatile(ptr, color);
         }
     }
 
@@ -139,7 +151,7 @@ impl<'a> BitmapFontRenderer<'a> {
     }
 }
 
-// Implement the Write struct
+// Implement the Write trait
 impl Write for BitmapFontRenderer<'_> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         self.write_string(s)

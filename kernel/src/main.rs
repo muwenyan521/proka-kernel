@@ -73,7 +73,7 @@ pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
     serial_println!("Frame allocator initialized");
 
     // Then initialize memory mapper with physical offset
-    let physical_memory_offset = VirtAddr::new(0xFFFF_8000_0000_0000); // Common higher-half offset
+    let physical_memory_offset = VirtAddr::new(0x000000); // Common higher-half offset
     proka_kernel::mapper::init_memory_mapper(physical_memory_offset);
     serial_println!("Memory mapper initialized");
 
