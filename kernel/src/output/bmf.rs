@@ -35,20 +35,15 @@ impl<'a> BMFParser<'a> {
 
     pub fn get_bytes(&self, unicode: u32) -> Option<&[u8]> {
         let mut slot = (unicode % self.hash_slots as u32) as usize;
-        let mut count = 0;
 
         loop {
-            if count >= 50 {
-                // 防止死循环
-                return None;
-            }
-
             let entry_start = self.hash_start + slot * 6;
             let entry_end = entry_start + 6;
             let entry = &self.data[entry_start..entry_end];
 
             let entry_unicode = u16::from_le_bytes([entry[0], entry[1]]);
-            let entry_offset = u32::from_le_bytes([entry[2], entry[3], entry[4], 0]) as usize;
+            let entry_offset =
+                u32::from_le_bytes([entry[2], entry[3], entry[4], entry[5]]) as usize;
 
             if entry_unicode as u32 == unicode {
                 let char_start = entry_offset;
@@ -59,7 +54,6 @@ impl<'a> BMFParser<'a> {
             }
 
             slot = (slot + 1) % self.hash_slots;
-            count += 1;
         }
     }
 
@@ -81,6 +75,7 @@ impl<'a> BMFParser<'a> {
 
                 for x in 0..self.font_size as usize {
                     image[y][x] = if bits[x] == 1 { 255 } else { 0 };
+                    //image[y][x] = if x < bits.len() { bits[x] } else { 0 };
                 }
             }
 

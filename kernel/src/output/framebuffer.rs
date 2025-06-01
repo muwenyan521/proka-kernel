@@ -1,4 +1,7 @@
-use crate::output::bmf::{BMFParser, DEFAULT_FONT};
+use crate::{
+    output::bmf::{BMFParser, DEFAULT_FONT},
+    serial_println,
+};
 use core::{fmt::Write, ptr};
 use lazy_static::lazy_static;
 use multiboot2::FramebufferTag;
@@ -112,6 +115,7 @@ impl<'a> BitmapFontRenderer<'a> {
             Some(b) => b,
             None => return,
         };
+        serial_println!("{:?}", bitmap);
 
         let start_x = self.cursor_x;
         let start_y = self.cursor_y;
