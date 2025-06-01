@@ -31,7 +31,7 @@ def get_available_loop_device():
         return None
 
 
-def make_disk(image_file, size_mb, mount_point):
+def make_disk(image_file, size_mb, mount_point, use_uefi):
     loop_device = None
     mounted = False
 
@@ -42,9 +42,14 @@ def make_disk(image_file, size_mb, mount_point):
 
         # Partition disk
         print("Partitioning disk...")
-        run_command(
-            f"parted -s {image_file} mklabel msdos mkpart primary ext4 1MiB 100%"
-        )
+        if not use_uefi:
+            run_command(
+                f"parted -s {image_file} mklabel gpt mkpart primary fat32 1MiB 100% set 1 esp on"
+            )
+        else:
+            run_command(
+                f"parted -s {image_file} mklabel msdos mkpart primary ext4 1MiB 100%"
+            )
 
         # Setup loop device
         loop_device = get_available_loop_device()
@@ -56,7 +61,10 @@ def make_disk(image_file, size_mb, mount_point):
 
         # Format partition
         print("Formatting partition...")
-        run_command(f"mkfs.ext4 {loop_device}p1", True)
+        if not use_uefi:
+            run_command(f"mkfs.ext4 {loop_device}p1", True)
+        else:
+            run_command(f"mkfs.fat -F 32 {loop_device}p1", True)
 
         # Mount partition
         print(f"Mounting to {mount_point}...")
@@ -67,13 +75,22 @@ def make_disk(image_file, size_mb, mount_point):
         # Install GRUB
         boot_dir = os.path.join(mount_point, "boot")
         print("Installing GRUB...")
-        run_command(
-            f"grub-install --target=i386-pc --boot-directory={boot_dir} {loop_device}",
-            True,
-        )
+        if use_uefi:
+            run_command(
+                f"grub-install --target=x86_64-efi "
+                f"--efi-directory={mount_point} "
+                f"--boot-directory={boot_dir} "
+                f"--removable {loop_device}",
+                True,
+            )
+        else:
+            run_command(
+                f"grub-install --target=i386-pc --boot-directory={boot_dir} {loop_device}",
+                True,
+            )
 
         # Create GRUB config
-        grub_dir = os.path.join(boot_dir, "grub", 'grub.cfg')
+        grub_dir = os.path.join(boot_dir, "grub", "grub.cfg")
         os.makedirs(os.path.dirname(grub_dir), exist_ok=True)
 
         grub_cfg = """\
@@ -83,8 +100,12 @@ menuentry "Proka OS" {
     boot
 }"""
 
-        subprocess.run(f'echo "{grub_cfg}" | sudo tee {grub_dir} > {os.path.devnull}', check=True, shell=True)
-        
+        subprocess.run(
+            f'echo "{grub_cfg}" | sudo tee {grub_dir} > {os.path.devnull}',
+            check=True,
+            shell=True,
+        )
+
         # Copy kernel
         kernel_src = "target/x86_64-unknown-none/debug/proka-kernel"
         if not os.path.exists(kernel_src):
@@ -92,8 +113,8 @@ menuentry "Proka OS" {
 
         print("Copying kernel...")
         dst = os.path.join(boot_dir, "proka-kernel")
-        run_command(f'cp {kernel_src} {dst}', True)
-        
+        run_command(f"cp {kernel_src} {dst}", True)
+
     finally:
         # Cleanup
         if mounted:
@@ -102,6 +123,7 @@ menuentry "Proka OS" {
         if loop_device:
             print("Releasing loop device...")
             run_command(f"losetup -d {loop_device}", True)
+
 
 def update_disk(image_file, mount_point):
     loop_device = None
@@ -123,7 +145,7 @@ def update_disk(image_file, mount_point):
         run_command(f"mount {loop_device}p1 {mount_point}", True)
         mounted = True
         boot_dir = os.path.join(mount_point, "boot")
-        
+
         # Copy kernel
         kernel_src = "target/x86_64-unknown-none/debug/proka-kernel"
         if not os.path.exists(kernel_src):
@@ -131,8 +153,8 @@ def update_disk(image_file, mount_point):
 
         print("Copying kernel...")
         dst = os.path.join(boot_dir, "proka-kernel")
-        run_command(f'cp {kernel_src} {dst}', True)
-        
+        run_command(f"cp {kernel_src} {dst}", True)
+
     finally:
         # Cleanup
         if mounted:
@@ -156,7 +178,7 @@ def run_qemu(image_file, param):
         run_command(qemu_cmd)
     except KeyboardInterrupt:
         pass
-    
+
 
 def main():
     parser = argparse.ArgumentParser(description="Create bootable Proka OS disk image")
@@ -170,16 +192,27 @@ def main():
     parser.add_argument(
         "-p", "--qemu-param", nargs="*", default=[], help="Additional QEMU parameters"
     )
-    parser.add_argument('--force', action='store_true', default=False, help='Force image file to be recreated')
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Force image file to be recreated",
+    )
+    parser.add_argument(
+        "--uefi",
+        action="store_true",
+        default=False,
+        help="Use UEFI mode",
+    )
     args = parser.parse_args()
 
     build_kernel()
     print("\nKernel compiled successfully!")
     if not args.force and os.path.exists(args.image_file):
-        print('Use an existing image')
+        print("Use an existing image")
         update_disk(args.image_file, args.mount_dir)
     else:
-        make_disk(args.image_file, args.size, args.mount_dir)
+        make_disk(args.image_file, args.size, args.mount_dir, args.uefi)
     print("\nDisk image created successfully!")
     print(f" -> Image file: {args.image_file}")
     run_qemu(args.image_file, args.qemu_param)
