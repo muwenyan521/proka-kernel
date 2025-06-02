@@ -42,7 +42,7 @@ def make_disk(image_file, size_mb, mount_point, use_uefi):
 
         # Partition disk
         print("Partitioning disk...")
-        if not use_uefi:
+        if use_uefi:
             run_command(
                 f"parted -s {image_file} mklabel gpt mkpart primary fat32 1MiB 100% set 1 esp on"
             )

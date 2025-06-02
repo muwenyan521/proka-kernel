@@ -1,3 +1,24 @@
+//! Proka Kernel - A kernel for ProkaOS
+//! Copyright (C) RainSTR Studio 2025, All Rights Reserved.
+//! 
+//! This file contains the framebuffer structures and operators.
+//! 
+//! Well, to use it, please provide the Framebuffer tag struct to us, because
+//! it is very important that we can get some useful things.
+//! 
+//! Later, we will write some macros such as `print` and `println`, which can help
+//! you to put something into the framebuffer.
+//! 
+//! And, the reason of that we don't use the **Text mode** instead of **Graphics mode** is 
+//! that we need to make up an colorful buffer and make sure it supports on both BIOS and UEFI.
+//! 
+//! If not, instead of using the VGA mode `0xb8000`, it will only work in BIOS, not UEFI. 
+//! For example, my PC only supports UEFI, even newer machines.
+//! 
+//! Although it is freaking difficult and spent me 2 weeks, but we still want to implement it.
+//! 
+//! Finally, enjoy our work!
+
 use crate::{
     output::bmf::{BMFParser, DEFAULT_FONT},
     serial_println,
@@ -109,9 +130,9 @@ impl<'a> BitmapFontRenderer<'a> {
 
     /// Draw single char
     pub fn draw_char(&mut self, c: char) {
-        let ascii = c as usize;
+        let ascii = c as u32;
 
-        let bitmap = match self.font.get_grayscale_image(ascii.try_into().unwrap()) {
+        let bitmap = match self.font.get_grayscale_image(ascii) {
             Some(b) => b,
             None => return,
         };

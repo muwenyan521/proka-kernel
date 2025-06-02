@@ -86,7 +86,7 @@ pub extern "C" fn kernel_main(mbi_ptr: *const BootInformationHeader) -> ! {
         .lock()
         .as_mut()
     {
-        render.draw_char('H');
+        render.draw_char('中');
     }
 
     loop {}

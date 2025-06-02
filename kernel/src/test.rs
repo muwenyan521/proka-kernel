@@ -48,10 +48,10 @@ pub fn exit_qemu(exit_code: QemuExitCode) {
     }
 }
 
-// The kernel entry, which will start uo the test
+// The kernel entry, which will start up the test
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_main() -> ! {
-    test_main();
+    crate::test_main();
     loop {}
 }

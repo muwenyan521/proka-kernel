@@ -1,5 +1,26 @@
+//! Proka Kernel - A kernel for ProkaOS
+//! Copyright (C) RainSTR Studio 2025, All Rights Reserved.
+//! 
+//! This file will define something about the memory mapping (because we have enabled the paging).
+//! 
+//! In this module, we provided:
+//! - The frame allocator initializer;
+//! - The memory mapper initializer;
+//! - The standard mapping function;
+//! - The **continuous** mapping function.
+//! 
+//! Of cource, this took me a lot of time (about 2 weeks D: ), so can you give me some support?
+//! 
+//! Well, to initialize them, you just need to give us a memory mapper tag (multiboot2),
+//! because it is very important to allocate a frame.
+//! 
+//! By the way, this is thread-safe because we used a lot of `Mutex`, and it will help us to do
+//! the next work.
+//! 
+//! Also, this took us a long time, so please give us some cheer! =) 
+//! and enjoy it!
+
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 use multiboot2::{MemoryAreaType, MemoryMapTag};
 use spin::{Mutex, Once}; // For safe global initialization
