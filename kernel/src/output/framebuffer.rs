@@ -1,28 +1,25 @@
 //! Proka Kernel - A kernel for ProkaOS
 //! Copyright (C) RainSTR Studio 2025, All Rights Reserved.
-//! 
+//!
 //! This file contains the framebuffer structures and operators.
-//! 
+//!
 //! Well, to use it, please provide the Framebuffer tag struct to us, because
 //! it is very important that we can get some useful things.
-//! 
+//!
 //! Later, we will write some macros such as `print` and `println`, which can help
 //! you to put something into the framebuffer.
-//! 
-//! And, the reason of that we don't use the **Text mode** instead of **Graphics mode** is 
+//!
+//! And, the reason of that we don't use the **Text mode** instead of **Graphics mode** is
 //! that we need to make up an colorful buffer and make sure it supports on both BIOS and UEFI.
-//! 
-//! If not, instead of using the VGA mode `0xb8000`, it will only work in BIOS, not UEFI. 
+//!
+//! If not, instead of using the VGA mode `0xb8000`, it will only work in BIOS, not UEFI.
 //! For example, my PC only supports UEFI, even newer machines.
-//! 
+//!
 //! Although it is freaking difficult and spent me 2 weeks, but we still want to implement it.
-//! 
+//!
 //! Finally, enjoy our work!
 
-use crate::{
-    output::bmf::{BMFParser, DEFAULT_FONT},
-    serial_println,
-};
+use crate::output::bmf::{BMFParser, DEFAULT_FONT};
 use core::{fmt::Write, ptr};
 use lazy_static::lazy_static;
 use multiboot2::FramebufferTag;
@@ -136,7 +133,6 @@ impl<'a> BitmapFontRenderer<'a> {
             Some(b) => b,
             None => return,
         };
-        serial_println!("{:?}", bitmap);
 
         let start_x = self.cursor_x;
         let start_y = self.cursor_y;
@@ -162,7 +158,7 @@ impl<'a> BitmapFontRenderer<'a> {
     }
 
     /// Handler text rendering and next line
-    pub fn write_string(&mut self, s: &str) -> Result<(), core::fmt::Error> {
+    pub fn write_string(&mut self, s: &str) {
         for c in s.chars() {
             match c {
                 '\n' => {
@@ -172,14 +168,14 @@ impl<'a> BitmapFontRenderer<'a> {
                 _ => self.draw_char(c),
             }
         }
-        Ok(())
     }
 }
 
 // Implement the Write trait
 impl Write for BitmapFontRenderer<'_> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        self.write_string(s)
+        self.write_string(s);
+        Ok(())
     }
 }
 

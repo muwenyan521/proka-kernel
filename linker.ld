@@ -8,9 +8,15 @@ SECTIONS {
         KEEP(*(.multiboot2))
     }
 
+    /* Font data sections */
+    .font_data : ALIGN(4K) {
+        KEEP(*(.font_data*))
+    }
+
     /* Other sections */
-    .text : { *(.text) }
-    .data : { *(.data) }
-    .bss  : { *(.bss) }
+    .rodata : ALIGN(4K) { *(.rodata*) }
+    .text : ALIGN(4K) { *(.text) }
+    .data : ALIGN(4K) { *(.data) }
+    .bss  : ALIGN(4K) { *(.bss) }
     /DISCARD/ : { *(.comment) }
 }

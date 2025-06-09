@@ -100,7 +100,8 @@ impl FrameAlloc {
             .memory_areas()
             .into_iter()
             .filter(|area| area.typ() == MemoryAreaType::Available)
-            .filter(|area| area.start_address() >= 0x100000);
+            .filter(|area| area.start_address() >= 0x100000)
+            .collect::<Vec<_>>();
 
         let mut frames = Vec::new();
 
