@@ -5,7 +5,7 @@ proka.img
 mnt/*
 
 # Added by cargo
-/target
+/kernel/target
 
 scripts/font/*.ttf
 scripts/font/*.txt

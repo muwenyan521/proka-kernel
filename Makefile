@@ -7,7 +7,7 @@
 #
 .PHONY: mkdir clean debug
 # Define some basic variables
-BUILD_DIRS = boot tests 
+BUILD_DIRS = kernel
 OBJ_DIR = $(PWD)/target/obj
 LDFLAGS = -nostdlib
 

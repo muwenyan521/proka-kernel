@@ -27,7 +27,7 @@ pub fn init_heap() {
     unsafe {
         // Initialize locked heap
         let mut guard = ALLOCATOR.0.lock(); // Get lock
-        *guard = LockedHeap::new(HEAP_START, HEAP_SIZE);
+        *guard = LockedHeap::new(HEAP_START as *mut u8, HEAP_SIZE);
     }
 }
 

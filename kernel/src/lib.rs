@@ -8,15 +8,13 @@
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
 #![feature(abi_x86_interrupt)]
-#![test_runner(crate::test_runner)]
+#![test_runner(crate::test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 pub mod interrupts;
-pub mod memory;
 pub mod output;
-pub mod panic;
 pub mod test;
-
-pub use crate::{memory::*, panic::*, test::*};
+pub mod panic;
+pub mod memory;
 
 /// This will extern the C function and make it to safe.
 ///
