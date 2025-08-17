@@ -1,0 +1,11 @@
+# Ignore the ISO image
+proka-kernel.iso
+
+# Ignore the build directory
+target/*
+
+# Ignore the ISO temporary directory
+iso/*
+
+# Ignore the kernel binary
+kernel/proka-kernel
