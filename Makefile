@@ -22,10 +22,10 @@ all: clean mkdir
 
 ## Build the ISO image
 # This code is from TMXQWQ/TKernel2 in github
-makeiso: all kernel/proka-kernel
+makeiso: all kernel/kernel
 	mkdir -p iso
 	cp -r ./assets/rootfs/* ./iso/
-	cp ./kernel/proka-kernel ./iso/kernel
+	cp ./kernel/kernel ./iso/kernel
 # 	cp ./initrd.img ./iso	# TODO: Support initrd
 	touch ./proka-kernel.iso
 	xorriso $(XORRISOFLAGS) ./iso -o ./proka-kernel.iso \
