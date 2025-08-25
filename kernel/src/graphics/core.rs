@@ -55,6 +55,19 @@ impl<'a> Renderer<'a> {
         self.set_pixel_raw(x, y, color);
     }
 
+    pub fn get_pixel(&self, pixel: Pixel) -> color::Color {
+        let (x, y) = (pixel.x, pixel.y);
+        self.get_pixel_raw(x, y)
+    }
+
+    fn get_pixel_raw(&self, x: u64, y: u64) -> color::Color {
+        let offset = self.get_offset(x, y);
+        unsafe {
+            let p = self.buffer.addr().add(offset).cast::<u32>();
+            color::Color::from_u32(*p)
+        }
+    }
+
     pub fn set_clear_color(&mut self, color: color::Color) {
         self.clear_color = color;
     }

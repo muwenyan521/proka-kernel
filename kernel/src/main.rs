@@ -20,8 +20,13 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
+use ab_glyph::{Font, FontRef, Glyph, point};
+use alloc::vec;
 use limine::{BaseRevision, request::FramebufferRequest};
-use proka_kernel::graphics::{Pixel, Renderer, color};
+use proka_kernel::{
+    graphics::{Pixel, Renderer, color},
+    memory::talcalloc,
+};
 
 /* The section data define area */
 #[unsafe(link_section = ".requests")]
@@ -47,10 +52,12 @@ pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
+    //allocator::init_heap();
+
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             let mut render = Renderer::new(framebuffer);
-            render.set_clear_color(color::YELLOW);
+            render.set_clear_color(color::BLACK);
             render.clear();
             render.draw_line(
                 Pixel::new(0, 0),
@@ -62,8 +69,51 @@ pub extern "C" fn kernel_main() -> ! {
                 Pixel::new(456, 12),
                 Pixel::new(356, 122),
                 Pixel::new(221, 86),
-                color::BLUE,
+                color::YELLOW,
             );
+
+            let font = FontRef::try_from_slice(include_bytes!("../fonts/maple-mono.ttf")).unwrap();
+
+            // Get a glyph for 'q' with a scale & position.
+            let q_glyph: Glyph = font
+                .glyph_id('果')
+                .with_scale_and_position(32.0, point(100.0, 0.0));
+
+            // 定义字体的颜色，这里我们使用白色作为前景颜色
+            let font_color = color::WHITE;
+
+            // Draw it.
+            if let Some(q) = font.outline_glyph(q_glyph) {
+                q.draw(|x, y, coverage| {
+                    // coverage 是 ab_glyph 提供的抗锯齿 alpha 值，范围 0.0 到 1.0
+                    // 如果像素完全透明，则不需要绘制
+                    if coverage == 0.0 {
+                        return;
+                    }
+
+                    let p = Pixel::new(x as u64, y as u64);
+                    let background_color = render.get_pixel(p); // 获取背景像素颜色
+
+                    // 将颜色分量转换为 f32 进行计算，避免溢出并保持精度
+                    let bg_r = background_color.r as f32;
+                    let bg_g = background_color.g as f32;
+                    let bg_b = background_color.b as f32;
+
+                    let fg_r = font_color.r as f32;
+                    let fg_g = font_color.g as f32;
+                    let fg_b = font_color.b as f32;
+
+                    // Alpha 混合公式：最终颜色 = 前景颜色 * 前景Alpha + 背景颜色 * (1 - 前景Alpha)
+                    let final_r = (fg_r * coverage + bg_r * (1.0 - coverage)) as u8;
+                    let final_g = (fg_g * coverage + bg_g * (1.0 - coverage)) as u8;
+                    let final_b = (fg_b * coverage + bg_b * (1.0 - coverage)) as u8;
+
+                    // 设置混合后的像素颜色
+                    render.set_pixel(p, &color::Color::new(final_r, final_g, final_b));
+                });
+            }
+            let a = vec![0x00, 0x00, 0x00];
+            serial_println!("{:?}", a);
         }
     }
 

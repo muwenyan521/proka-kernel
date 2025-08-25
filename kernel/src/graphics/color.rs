@@ -41,6 +41,13 @@ impl Color {
         }
         (r << 24) | (g << 16) | (b << 8)
     }
+
+    pub fn from_u32(color: u32) -> Self {
+        let r = (color >> 24) & 0xFF;
+        let g = (color >> 16) & 0xFF;
+        let b = (color >> 8) & 0xFF;
+        Self::new(r as u8, g as u8, b as u8)
+    }
 }
 pub const BLACK: Color = Color::new(0, 0, 0);
 pub const WHITE: Color = Color::new(255, 255, 255);
