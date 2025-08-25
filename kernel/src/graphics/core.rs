@@ -269,4 +269,44 @@ impl<'a> Renderer<'a> {
             }
         }
     }
+
+    pub fn width(&self) -> u64 {
+        self.buffer.width()
+    }
+
+    pub fn height(&self) -> u64 {
+        self.buffer.height()
+    }
+
+    pub fn draw_rect(&mut self, pixel: Pixel, width: u64, height: u64, color: color::Color) -> () {
+        let (x, y) = (pixel.x, pixel.y);
+        let x2 = x + width;
+        let y2 = y + height;
+
+        // 绘制四条边
+        self.draw_line(Pixel::new(x, y), Pixel::new(x2, y), color);
+
+        self.draw_line(Pixel::new(x2, y), Pixel::new(x2, y2), color);
+
+        self.draw_line(Pixel::new(x2, y2), Pixel::new(x, y2), color);
+
+        self.draw_line(Pixel::new(x, y2), Pixel::new(x, y), color);
+    }
+
+    pub fn fill_rect(&mut self, pixel: Pixel, width: u64, height: u64, color: color::Color) {
+        let (x_min, y_min) = (pixel.x, pixel.y);
+        let x_max = x_min + width;
+        let y_max = y_min + height;
+
+        let x_start = x_min.max(0);
+        let x_end = x_max.min(self.width() - 1);
+        let y_start = y_min.max(0);
+        let y_end = y_max.min(self.height() - 1);
+
+        for y in y_start..=y_end {
+            for x in x_start..=x_end {
+                self.set_pixel_raw(x, y, &color);
+            }
+        }
+    }
 }

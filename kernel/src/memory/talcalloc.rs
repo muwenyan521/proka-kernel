@@ -1,6 +1,6 @@
 use talc::*;
 
-static mut ARENA: [u8; 10000] = [0; 10000];
+static mut ARENA: [u8; 8 * 1024 * 1024] = [0; 8 * 1024 * 1024];
 
 #[global_allocator]
 static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> = Talc::new(unsafe {
