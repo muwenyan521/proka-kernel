@@ -42,17 +42,24 @@ sudo apt-get install qemu-system-x86 parted grub-efi-amd64 python3    # If you w
 ### Build
 To build it, you just need to run 1 command:
 ```bash
-cargo build --release   # The `release` tag will optimize the kernel
+make
 ```
 
-The kernel file will put in `target/x86_64-unknown-none/release/proka-kernel` (If you passed the `--release` tag).
+The kernel file will put in `kernel/kernel` in project root.
 
-Isn't it easy? If you want to start the emulation of the kernel by using QEMU, you just need to run:
+Isn't it easy? If you want to make up an ISO, you just need to run:
 ```bash
-scripts/run.py  # Must run in project root!!!
+make makeiso
 ```
 
-Then the QEMU process will on. For more information about it, please run `scripts/run.py -h`.
+The ISO file will put in `proka-kernel.iso` in project root.
+
+If you want to start the emulation of the kernel by using QEMU, you just need to run:
+```bash
+make run  # Must run in project root!!!
+```
+
+Then the QEMU process will on. You can see the kernel log in the terminal.
 
 ## Contributors
 - zhangxuan2011 <zx20110412@outlook.com>
