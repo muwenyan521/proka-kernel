@@ -48,6 +48,10 @@ impl Color {
         let b = (color >> 8) & 0xFF;
         Self::new(r as u8, g as u8, b as u8)
     }
+
+    pub fn mix_alpha(&self, alpha: u8) -> Self {
+        Self::with_alpha(self.r, self.g, self.b, alpha)
+    }
 }
 pub const BLACK: Color = Color::new(0, 0, 0);
 pub const WHITE: Color = Color::new(255, 255, 255);

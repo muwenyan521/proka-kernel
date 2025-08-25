@@ -39,12 +39,35 @@ impl<'a> Renderer<'a> {
         // 边界检查：确保像素在屏幕范围内
         if x < self.buffer.width() && y < self.buffer.height() {
             let offset = self.get_offset(x, y);
+
+            let color_u32 = if color.a == 255 {
+                self.mask_color(color)
+            } else if color.a > 0 {
+                // 获取当前像素颜色
+                let current_color = self.get_pixel_raw(x, y);
+
+                // 执行alpha混合: result = (source * alpha + destination * (255 - alpha)) / 255
+                let alpha = color.a as u32;
+                let inv_alpha = 255 - alpha;
+
+                let r = (color.r as u32 * alpha + current_color.r as u32 * inv_alpha) / 255;
+                let g = (color.g as u32 * alpha + current_color.g as u32 * inv_alpha) / 255;
+                let b = (color.b as u32 * alpha + current_color.b as u32 * inv_alpha) / 255;
+
+                let mixed_color = color::Color::with_alpha(r as u8, g as u8, b as u8, 255);
+
+                self.mask_color(&mixed_color)
+            } else {
+                // 透明,不绘制
+                return;
+            };
+
             unsafe {
                 self.buffer
                     .addr()
                     .add(offset)
                     .cast::<u32>()
-                    .write(self.mask_color(color));
+                    .write(color_u32);
             }
         }
     }

@@ -80,7 +80,7 @@ pub extern "C" fn kernel_main() -> ! {
                 .with_scale_and_position(32.0, point(100.0, 0.0));
 
             // 定义字体的颜色，这里我们使用白色作为前景颜色
-            let font_color = color::WHITE;
+            let font_color = color::GREEN;
 
             // Draw it.
             if let Some(q) = font.outline_glyph(q_glyph) {
@@ -92,24 +92,9 @@ pub extern "C" fn kernel_main() -> ! {
                     }
 
                     let p = Pixel::new(x as u64, y as u64);
-                    let background_color = render.get_pixel(p); // 获取背景像素颜色
-
-                    // 将颜色分量转换为 f32 进行计算，避免溢出并保持精度
-                    let bg_r = background_color.r as f32;
-                    let bg_g = background_color.g as f32;
-                    let bg_b = background_color.b as f32;
-
-                    let fg_r = font_color.r as f32;
-                    let fg_g = font_color.g as f32;
-                    let fg_b = font_color.b as f32;
-
-                    // Alpha 混合公式：最终颜色 = 前景颜色 * 前景Alpha + 背景颜色 * (1 - 前景Alpha)
-                    let final_r = (fg_r * coverage + bg_r * (1.0 - coverage)) as u8;
-                    let final_g = (fg_g * coverage + bg_g * (1.0 - coverage)) as u8;
-                    let final_b = (fg_b * coverage + bg_b * (1.0 - coverage)) as u8;
-
+                    let alpha = (255.0 * coverage) as u8;
                     // 设置混合后的像素颜色
-                    render.set_pixel(p, &color::Color::new(final_r, final_g, final_b));
+                    render.set_pixel(p, &font_color.mix_alpha(alpha));
                 });
             }
             let a = vec![0x00, 0x00, 0x00];
