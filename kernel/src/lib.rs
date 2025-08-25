@@ -10,11 +10,12 @@
 #![feature(abi_x86_interrupt)]
 #![test_runner(crate::test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+pub mod graphics;
 pub mod interrupts;
-pub mod output;
-pub mod test;
-pub mod panic;
 pub mod memory;
+pub mod output;
+pub mod panic;
+pub mod test;
 
 /// This will extern the C function and make it to safe.
 ///

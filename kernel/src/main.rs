@@ -21,6 +21,7 @@
 extern crate proka_kernel;
 extern crate alloc;
 use limine::{BaseRevision, request::FramebufferRequest};
+use proka_kernel::graphics::{Pixel, Renderer, color};
 
 /* The section data define area */
 #[unsafe(link_section = ".requests")]
@@ -48,20 +49,21 @@ pub extern "C" fn kernel_main() -> ! {
 
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            for i in 0..100_u64 {
-                // Calculate the pixel offset using the framebuffer information we obtained above.
-                // We skip `i` scanlines (pitch is provided in bytes) and add `i * 4` to skip `i` pixels forward.
-                let pixel_offset = i * framebuffer.pitch() + i * 4;
+            let mut render = Renderer::new(framebuffer);
+            render.set_clear_color(color::YELLOW);
+            render.clear();
+            render.draw_line(
+                Pixel::new(0, 0),
+                Pixel::new(800, 600),
+                color::Color::new(128, 128, 128),
+            );
 
-                // Write 0xFFFFFFFF to the provided pixel offset to fill it white.
-                unsafe {
-                    framebuffer
-                        .addr()
-                        .add(pixel_offset as usize)
-                        .cast::<u32>()
-                        .write(0xFFFFFFFF)
-                };
-            }
+            render.fill_triangle(
+                Pixel::new(456, 12),
+                Pixel::new(356, 122),
+                Pixel::new(221, 86),
+                color::BLUE,
+            );
         }
     }
 
