@@ -95,6 +95,10 @@ impl<'a> Renderer<'a> {
         self.clear_color = color;
     }
 
+    pub fn get_clear_color(&self) -> color::Color {
+        self.clear_color
+    }
+
     pub fn clear(&mut self) {
         let width = self.buffer.width();
         let height = self.buffer.height();

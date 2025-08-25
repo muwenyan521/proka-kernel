@@ -74,7 +74,9 @@ pub extern "C" fn kernel_main() -> ! {
 
             let font = FontRef::try_from_slice(include_bytes!("../fonts/maple-mono.ttf")).unwrap();
             let mut c = Console::new(render, font);
-            c.draw_string("12121_-+*^%&/()=?'!@#");
+            for i in 0..1000 {
+                c.write_str("Hello World!");
+            }
         }
     }
 
