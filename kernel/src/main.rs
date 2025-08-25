@@ -71,7 +71,7 @@ pub extern "C" fn kernel_main() -> ! {
                 Pixel::new(221, 86),
                 color::YELLOW,
             );
-
+            render.present();
             let font = FontRef::try_from_slice(include_bytes!("../fonts/maple-mono.ttf")).unwrap();
             let mut c = Console::new(render, font);
             for i in 0..1000 {

@@ -284,6 +284,7 @@ impl<'a> Console<'a> {
             );
         }
         self.draw_cursor(); // 绘制完所有字符后，绘制光标
+        self.renderer.present();
     }
 
     /// 写入一个字符串到控制台
