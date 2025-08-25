@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     pub r: u8,
     pub g: u8,
@@ -51,6 +51,17 @@ impl Color {
 
     pub fn mix_alpha(&self, alpha: u8) -> Self {
         Self::with_alpha(self.r, self.g, self.b, alpha)
+    }
+
+    pub fn mix(&self, other: &Color, alpha: u8) -> Self {
+        let r =
+            ((self.r as u16 * alpha as u16 + other.r as u16 * (255 - alpha) as u16) / 255) as u8;
+        let g =
+            ((self.g as u16 * alpha as u16 + other.g as u16 * (255 - alpha) as u16) / 255) as u8;
+        let b =
+            ((self.b as u16 * alpha as u16 + other.b as u16 * (255 - alpha) as u16) / 255) as u8;
+        let a = alpha;
+        Self { r, g, b, a }
     }
 }
 pub const BLACK: Color = Color::new(0, 0, 0);
