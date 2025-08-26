@@ -10,6 +10,7 @@
 #![feature(abi_x86_interrupt)]
 #![test_runner(crate::test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+pub mod drivers;
 pub mod graphics;
 pub mod interrupts;
 pub mod libs;
