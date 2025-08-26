@@ -1,4 +1,3 @@
-use crate::interrupts::apic;
 use crate::libs::msr;
 use crate::println;
 use raw_cpuid::CpuId;
