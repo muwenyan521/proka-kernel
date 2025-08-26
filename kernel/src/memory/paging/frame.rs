@@ -1,7 +1,7 @@
-use bitmap_allocator::{BitAlloc4K, BitAlloc};
+use bitmap_allocator::{BitAlloc, BitAlloc4K};
 use spin::Mutex;
-use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
+use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB};
 
 /// Convert Physical address to Physical Frame
 fn addr_to_phys_frame(addr: Option<usize>) -> Option<PhysFrame> {
@@ -50,7 +50,7 @@ impl PhysFrameAlloc {
 // Implement the FrameAllocator trait
 unsafe impl FrameAllocator<Size4KiB> for PhysFrameAlloc {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-       self.alloc_frame() 
+        self.alloc_frame()
     }
 }
 

@@ -1,5 +1,6 @@
 extern crate alloc;
 use crate::graphics::color;
+use crate::libs::bmp::{BmpError, BmpImage};
 use alloc::{vec, vec::Vec};
 use core::slice;
 use glam::U64Vec2;
@@ -444,6 +445,65 @@ impl<'a> Renderer<'a> {
                 inside = !inside;
             }
         }
+    }
+
+    pub fn draw_bmp(&mut self, pos: Pixel, bmp: &BmpImage) {
+        let (x_start, y_start) = (pos.x, pos.y);
+
+        for y in 0..bmp.height() {
+            for x in 0..bmp.width() {
+                if let Some(color) = bmp.pixel(x, y) {
+                    self.set_pixel_raw(x_start + x as u64, y_start + y as u64, &color);
+                }
+            }
+        }
+    }
+    /// 绘制BMP图像 (带缩放)
+    pub fn draw_bmp_scaled(&mut self, pos: Pixel, bmp: &BmpImage, scale_x: f32, scale_y: f32) {
+        let scaled_width = (bmp.width() as f32 * scale_x) as u64;
+        let scaled_height = (bmp.height() as f32 * scale_y) as u64;
+
+        for y in 0..scaled_height {
+            for x in 0..scaled_width {
+                // 计算原始图像中的对应位置
+                let src_x = (x as f32 / scale_x) as u32;
+                let src_y = (y as f32 / scale_y) as u32;
+
+                if let Some(color) = bmp.pixel(src_x, src_y) {
+                    self.set_pixel_raw(pos.x + x, pos.y + y, &color);
+                }
+            }
+        }
+    }
+    /// 绘制BMP图像 (扭曲变形)
+    pub fn draw_bmp_distorted(&mut self, corners: [Pixel; 4], bmp: &BmpImage) {
+        // 计算包围盒
+        let min_x = corners.iter().map(|p| p.x).min().unwrap_or(0);
+        let max_x = corners.iter().map(|p| p.x).max().unwrap_or(0);
+        let min_y = corners.iter().map(|p| p.y).min().unwrap_or(0);
+        let max_y = corners.iter().map(|p| p.y).max().unwrap_or(0);
+
+        // 计算变换矩阵 (简化的双线性插值)
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                // 计算相对位置 (简化版，实际应该使用更精确的纹理映射)
+                let u = (x - min_x) as f32 / (max_x - min_x) as f32;
+                let v = (y - min_y) as f32 / (max_y - min_y) as f32;
+
+                let src_x = (u * bmp.width() as f32) as u32;
+                let src_y = (v * bmp.height() as f32) as u32;
+
+                if let Some(color) = bmp.pixel(src_x, src_y) {
+                    self.set_pixel_raw(x, y, &color);
+                }
+            }
+        }
+    }
+    /// 从字节加载并绘制BMP图像
+    pub fn draw_bmp_from_bytes(&mut self, pos: Pixel, data: &[u8]) -> Result<(), BmpError> {
+        let bmp = BmpImage::from_bytes(data)?;
+        self.draw_bmp(pos, &bmp);
+        Ok(())
     }
 
     /// 将后台缓冲区的内容复制到前台帧缓冲区，从而显示绘制结果。
