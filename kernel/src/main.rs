@@ -38,11 +38,17 @@ pub extern "C" fn kernel_main() -> ! {
     println!("ProkaOS {}", env!("CARGO_PKG_VERSION"));
     println!("• Hello, World!");
 
+    proka_kernel::output::console::CONSOLE
+        .lock()
+        .cursor_hidden();
+
     proka_kernel::interrupts::gdt::init();
     println!("• GDT Initialized");
 
     proka_kernel::interrupts::idt::init_idt();
     println!("• IDT initialized");
+
+    proka_kernel::interrupts::apic::init();
 
     println!("• Kernel ready");
 

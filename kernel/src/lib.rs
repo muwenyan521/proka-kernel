@@ -12,6 +12,7 @@
 #![reexport_test_harness_main = "test_main"]
 pub mod graphics;
 pub mod interrupts;
+pub mod libs;
 pub mod memory;
 pub mod output;
 pub mod panic;
