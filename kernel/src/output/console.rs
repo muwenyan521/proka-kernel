@@ -66,7 +66,7 @@ impl Rect {
 }
 
 pub struct Console<'a> {
-    renderer: Renderer<'a>,
+    pub renderer: Renderer<'a>,
     font: FontRef<'static>,
     scale: PxScale,
 
@@ -88,6 +88,8 @@ pub struct Console<'a> {
 
     dirty_regions: Vec<Rect>,  // 存储需要重绘的矩形区域 (字符坐标)
     cursor_needs_redraw: bool, // 标记光标是否需要重绘
+
+    hidden_cursor: bool,
 }
 
 impl<'a> Console<'a> {
@@ -139,7 +141,12 @@ impl<'a> Console<'a> {
             font_baseline,
             dirty_regions: Vec::new(),
             cursor_needs_redraw: true, // 初始时光标需要绘制
+            hidden_cursor: false,
         }
+    }
+
+    pub fn get_renderer(&mut self) -> &mut Renderer<'a> {
+        &mut self.renderer
     }
 
     /// 添加一个脏区域，会尝试合并相邻或重叠的区域
@@ -155,6 +162,10 @@ impl<'a> Console<'a> {
         if !merged {
             self.dirty_regions.push(region);
         }
+    }
+
+    pub fn cursor_hidden(&mut self) {
+        self.hidden_cursor = true;
     }
 
     /// 清空整个缓冲区
@@ -325,6 +336,9 @@ impl<'a> Console<'a> {
     pub fn draw_cursor(&mut self) {
         // 仅在光标需要重绘时才执行
         if !self.cursor_needs_redraw {
+            return;
+        }
+        if self.hidden_cursor {
             return;
         }
 
