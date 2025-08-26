@@ -17,6 +17,19 @@ pub mod output;
 pub mod panic;
 pub mod test;
 
+use limine::{BaseRevision, request::FramebufferRequest};
+
+/* The section data define area */
+#[unsafe(link_section = ".requests")]
+#[used]
+/// The base revision of the kernel.
+pub static BASE_REVISION: BaseRevision = BaseRevision::new();
+
+#[unsafe(link_section = ".requests")]
+#[used]
+/// The framebuffer request of the kernel.
+pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+
 /// This will extern the C function and make it to safe.
 ///
 /// # Example

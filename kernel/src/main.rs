@@ -20,24 +20,7 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-use ab_glyph::{Font, FontRef, Glyph, point};
-use limine::{BaseRevision, request::FramebufferRequest};
-use proka_kernel::{
-    graphics::{Pixel, Renderer, color},
-    memory::talcalloc,
-    output::console::Console,
-};
-
-/* The section data define area */
-#[unsafe(link_section = ".requests")]
-#[used]
-/// The base revision of the kernel.
-static BASE_REVISION: BaseRevision = BaseRevision::new();
-
-#[unsafe(link_section = ".requests")]
-#[used]
-/// The framebuffer request of the kernel.
-static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+use proka_kernel::BASE_REVISION;
 
 /* C functions extern area */
 extern_safe! {
@@ -51,33 +34,10 @@ extern_safe! {
 pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
-
-    //allocator::init_heap();
-
-    if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
-        if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            let mut render = Renderer::new(framebuffer);
-            render.set_clear_color(color::BLACK);
-            render.clear();
-            render.draw_line(
-                Pixel::new(0, 0),
-                Pixel::new(800, 600),
-                color::Color::new(128, 128, 128),
-            );
-
-            render.fill_triangle(
-                Pixel::new(456, 12),
-                Pixel::new(356, 122),
-                Pixel::new(221, 86),
-                color::YELLOW,
-            );
-            render.present();
-            let font = FontRef::try_from_slice(include_bytes!("../fonts/maple-mono.ttf")).unwrap();
-            let mut c = Console::new(render, font);
-            for i in 0..1000 {
-                c.write_str("Hello World!");
-            }
-        }
+    
+    // Test is console working
+    for i in 0..1000 {
+        print!("{} ", i);
     }
 
     loop {}

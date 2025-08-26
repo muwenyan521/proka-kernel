@@ -4,14 +4,33 @@ use crate::{
         Pixel, Renderer,
         color::{self, Color},
     },
+    FRAMEBUFFER_REQUEST
     // serial_println, // 如果不需要，可以移除
 };
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont}; // 引入 ScaleFont trait
 use alloc::{vec, vec::Vec};
+use spin::Mutex;
+use core::fmt::{self, Write};
+use lazy_static::lazy_static;
 use libm::*; // round, ceilf 等函数
 
 pub const DEFAULT_FONT_SIZE: f32 = 12.0;
 pub const TAB_SPACES: usize = 4;
+
+// The default font writer
+lazy_static! {
+    static ref DEFAULT_FONT: FontRef<'static> = {
+        let font_data = include_bytes!("../../fonts/maple-mono.ttf");
+        FontRef::try_from_slice(font_data).unwrap()
+    };
+
+    pub static ref DEFAULT_FONT_WRITER: Mutex<Console<'static>> = Mutex::new({
+        let renderer = Renderer::new(
+            FRAMEBUFFER_REQUEST.get_response().unwrap().framebuffers().next().unwrap(),
+        );
+        Console::new(renderer, DEFAULT_FONT.clone())
+    });
+}
 
 /// Represents a character with its foreground and background colors in the console buffer.
 #[derive(Clone, Copy, PartialEq, Eq)] // 添加 PartialEq 和 Eq 便于比较
@@ -465,7 +484,7 @@ impl<'a> Console<'a> {
     }
 
     /// 写入一个字符串到控制台
-    pub fn write_str(&mut self, string: &str) {
+    pub fn write_string(&mut self, string: &str) {
         let old_cursor_x = self.cursor_x;
         let old_cursor_y = self.cursor_y;
 
@@ -544,4 +563,29 @@ impl<'a> Console<'a> {
             self.draw_buffer_to_screen(); // 在背景色改变后立即绘制以反映变化
         }
     }
+}
+
+// Implement the [`Write`] trait to support formatting
+impl Write for Console<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.write_string(s);
+        Ok(())
+    }
+}
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::output::console::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    use core::fmt::Write;
+    DEFAULT_FONT_WRITER.lock().write_fmt(args).unwrap();
 }
