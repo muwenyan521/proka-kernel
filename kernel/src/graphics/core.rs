@@ -8,6 +8,21 @@ use limine::framebuffer::Framebuffer;
 
 pub type Pixel = U64Vec2;
 
+pub trait PixelCoord {
+    fn to_coord(&self) -> (u64, u64);
+}
+
+impl PixelCoord for Pixel {
+    fn to_coord(&self) -> (u64, u64) {
+        (self.x, self.y)
+    }
+}
+
+#[macro_export]
+macro_rules! pixel {
+    ($x:expr, $y:expr) => {{ Pixel::new(($x) as u64, ($y) as u64) }};
+}
+
 pub struct Renderer<'a> {
     framebuffer: Framebuffer<'a>, // 这是前台缓冲区，最终显示的内容
     back_buffer: Vec<u8>,         // 这是后台缓冲区，所有的绘制操作都在这里进行
@@ -35,12 +50,11 @@ impl<'a> Renderer<'a> {
     #[inline(always)]
     fn get_buffer_offset(&self, x: u64, y: u64) -> usize {
         // 后台缓冲区的布局是线性的，不一定与framebuffer的pitch相同
-        // framebuffer.pitch() 是每行的字节数
-        // 对于后台缓冲区，我们假设是紧密排列的，即 width * pixel_size
         y as usize * self.framebuffer.width() as usize * self.pixel_size
             + x as usize * self.pixel_size
     }
 
+    #[inline(always)]
     fn mask_color(&self, color: &color::Color) -> u32 {
         if self.framebuffer.bpp() == 32 {
             let value: u32 = ((color.r as u32) << self.framebuffer.red_mask_shift())
@@ -88,12 +102,12 @@ impl<'a> Renderer<'a> {
 
     #[inline(always)]
     pub fn set_pixel(&mut self, pixel: Pixel, color: &color::Color) {
-        let (x, y) = (pixel.x, pixel.y);
+        let (x, y) = pixel.to_coord();
         self.set_pixel_raw(x, y, color);
     }
 
     pub fn get_pixel(&self, pixel: Pixel) -> color::Color {
-        let (x, y) = (pixel.x, pixel.y);
+        let (x, y) = pixel.to_coord();
         self.get_pixel_raw(x, y) // 从前台缓冲区获取
     }
 
@@ -137,7 +151,8 @@ impl<'a> Renderer<'a> {
         let dx_abs = ((p2.x as i64 - p1.x as i64).abs()) as u64;
         let dy_abs = ((p2.y as i64 - p1.y as i64).abs()) as u64;
         let steep = dy_abs > dx_abs;
-        let (mut x1, mut y1, mut x2, mut y2) = (p1.x, p1.y, p2.x, p2.y);
+        let (mut x1, mut y1) = p1.to_coord();
+        let (mut x2, mut y2) = p2.to_coord();
         if steep {
             core::mem::swap(&mut x1, &mut y1);
             core::mem::swap(&mut x2, &mut y2);
@@ -179,11 +194,11 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn fill_triangle(&mut self, p1: Pixel, p2: Pixel, p3: Pixel, color: color::Color) {
-        let (x1, y1) = (p1.x, p1.y);
-        let (x2, y2) = (p2.x, p2.y);
-        let (x3, y3) = (p3.x, p3.y);
+        let (x1, y1) = p1.to_coord();
+        let (x2, y2) = p2.to_coord();
+        let (x3, y3) = p3.to_coord();
         // 定义3个变换后的 Pixel
-        let mut pts = [Pixel::new(x1, y1), Pixel::new(x2, y2), Pixel::new(x3, y3)];
+        let mut pts = [pixel!(x1, y1), pixel!(x2, y2), pixel!(x3, y3)];
         // 按 y 轻量排序：冒泡排序也可以
         for i in 0..pts.len() {
             for j in i + 1..pts.len() {
@@ -223,7 +238,7 @@ impl<'a> Renderer<'a> {
             // 填充到后台缓冲区
             for x in start_x..=end_x {
                 if x >= 0 {
-                    let pixel = Pixel::new(x as u64, y as u64);
+                    let pixel = pixel!(x, y);
                     self.set_pixel(pixel, &color);
                 }
             }
@@ -282,18 +297,18 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn draw_rect(&mut self, pixel: Pixel, width: u64, height: u64, color: color::Color) -> () {
-        let (x, y) = (pixel.x, pixel.y);
+        let (x, y) = pixel.to_coord();
         let x2 = x + width;
         let y2 = y + height;
         // 绘制到后台缓冲区
-        self.draw_line(Pixel::new(x, y), Pixel::new(x2, y), color);
-        self.draw_line(Pixel::new(x2, y), Pixel::new(x2, y2), color);
-        self.draw_line(Pixel::new(x2, y2), Pixel::new(x, y2), color);
-        self.draw_line(Pixel::new(x, y2), Pixel::new(x, y), color);
+        self.draw_line(pixel!(x, y), pixel!(x2, y), color);
+        self.draw_line(pixel!(x2, y), pixel!(x2, y2), color);
+        self.draw_line(pixel!(x2, y2), pixel!(x, y2), color);
+        self.draw_line(pixel!(x, y2), pixel!(x, y), color);
     }
 
     pub fn fill_rect(&mut self, pixel: Pixel, width: u64, height: u64, color: color::Color) {
-        let (x_min, y_min) = (pixel.x, pixel.y);
+        let (x_min, y_min) = pixel.to_coord();
         let x_max = x_min + width;
         let y_max = y_min + height;
         let x_start = x_min.max(0);

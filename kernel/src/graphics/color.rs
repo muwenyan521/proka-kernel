@@ -64,12 +64,34 @@ impl Color {
         Self { r, g, b, a }
     }
 }
-pub const BLACK: Color = Color::new(0, 0, 0);
-pub const WHITE: Color = Color::new(255, 255, 255);
-pub const RED: Color = Color::new(255, 0, 0);
-pub const GREEN: Color = Color::new(0, 255, 0);
-pub const BLUE: Color = Color::new(0, 0, 255);
-pub const YELLOW: Color = Color::new(255, 255, 0);
-pub const CYAN: Color = Color::new(0, 255, 255);
-pub const MAGENTA: Color = Color::new(255, 0, 255);
-pub const GRAY: Color = Color::new(128, 128, 128);
+
+#[macro_export]
+macro_rules! color {
+    // RGB 格式 (自动填充 alpha=255)
+    ($r:expr, $g:expr, $b:expr) => {
+        Color::new($r as u8, $g as u8, $b as u8)
+    };
+
+    // RGBA 格式
+    ($r:expr, $g:expr, $b:expr, $a:expr) => {
+        Color::with_alpha($r as u8, $g as u8, $b as u8, $a as u8)
+    };
+
+    // 十六进制颜色码 (支持 #RRGGBB 和 #RRGGBBAA)
+    (#$hex:expr) => {
+        Color::from_hex($hex)
+    };
+}
+
+// 基础颜色
+pub const BLACK: Color = color!(0, 0, 0);
+pub const WHITE: Color = color!(255, 255, 255);
+pub const RED: Color = color!(255, 0, 0);
+pub const GREEN: Color = color!(0, 255, 0);
+pub const BLUE: Color = color!(0, 0, 255);
+// 实用混合色
+pub const YELLOW: Color = color!(255, 255, 0); // 红+绿
+pub const CYAN: Color = color!(0, 255, 255); // 绿+蓝
+pub const MAGENTA: Color = color!(255, 0, 255); // 红+蓝
+// 中性色
+pub const GRAY: Color = color!(128, 128, 128);
