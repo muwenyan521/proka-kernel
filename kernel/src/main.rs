@@ -42,6 +42,7 @@ pub extern "C" fn kernel_main() -> ! {
     println!("• Interrupts initialized");
 
     println!("• Kernel ready");
+
     loop {
         x86_64::instructions::hlt();
     }
