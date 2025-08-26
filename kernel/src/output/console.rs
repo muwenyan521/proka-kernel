@@ -1,18 +1,17 @@
 extern crate alloc;
 use crate::{
+    FRAMEBUFFER_REQUEST, // serial_println, // 如果不需要，可以移除
     graphics::{
         Pixel, Renderer,
         color::{self, Color},
     },
-    FRAMEBUFFER_REQUEST
-    // serial_println, // 如果不需要，可以移除
 };
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont}; // 引入 ScaleFont trait
 use alloc::{vec, vec::Vec};
-use spin::Mutex;
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
-use libm::*; // round, ceilf 等函数
+use libm::*;
+use spin::Mutex; // round, ceilf 等函数
 
 pub const DEFAULT_FONT_SIZE: f32 = 12.0;
 pub const TAB_SPACES: usize = 4;
@@ -23,10 +22,14 @@ lazy_static! {
         let font_data = include_bytes!("../../fonts/maple-mono.ttf");
         FontRef::try_from_slice(font_data).unwrap()
     };
-
-    pub static ref DEFAULT_FONT_WRITER: Mutex<Console<'static>> = Mutex::new({
+    pub static ref CONSOLE: Mutex<Console<'static>> = Mutex::new({
         let renderer = Renderer::new(
-            FRAMEBUFFER_REQUEST.get_response().unwrap().framebuffers().next().unwrap(),
+            FRAMEBUFFER_REQUEST
+                .get_response()
+                .unwrap()
+                .framebuffers()
+                .next()
+                .unwrap(),
         );
         Console::new(renderer, DEFAULT_FONT.clone())
     });
@@ -587,5 +590,5 @@ macro_rules! println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    DEFAULT_FONT_WRITER.lock().write_fmt(args).unwrap();
+    CONSOLE.lock().write_fmt(args).unwrap();
 }

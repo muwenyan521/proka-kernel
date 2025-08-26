@@ -34,11 +34,15 @@ extern_safe! {
 pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
-    
-    // Test is console working
-    for i in 0..1000 {
-        print!("{} ", i);
-    }
 
-    loop {}
+    println!("ProkaOS {}", env!("CARGO_PKG_VERSION"));
+    println!("• Hello, World!");
+
+    proka_kernel::interrupts::idt::init_idt();
+    println!("• Interrupts initialized");
+
+    println!("• Kernel ready");
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
