@@ -65,6 +65,19 @@ pub extern "C" fn kernel_main() -> ! {
 
     println!("• Kernel ready");
 
+    let mut device_manager = proka_kernel::drivers::DEVICE_MANAGER.lock();
+
+    device_manager.register_device(proka_kernel::drivers::block::ramfs::MemDevice::create_device());
+
+    let mem_device = device_manager.get_device("mem").unwrap();
+
+    mem_device.ops.write(1, &[0x42]).unwrap();
+
+    let mut buf = [0x41];
+    mem_device.ops.read(1, &mut buf).unwrap();
+
+    dual_print!("{}", buf[0] as char);
+
     loop {
         x86_64::instructions::hlt();
     }

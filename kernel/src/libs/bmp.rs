@@ -1,7 +1,6 @@
 // graphics/bmp.rs
 extern crate alloc;
 use crate::graphics::color;
-use crate::graphics::core::Pixel;
 use alloc::vec::Vec;
 use core::mem;
 
