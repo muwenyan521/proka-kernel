@@ -16,17 +16,13 @@ Also, you will find that it also have **Python**. But why? Can Python write kern
 ### Requirements
 Well, If you want to build this project, you need to install these components:
 - Rust (nightly, with target `x86_64-unknown-none`, the Rust compiler);
-- GCC (The C code compiler);
+- GCC* (The C code compiler);
 - NASM (The Assembly code compiler);
 - Make (The build tools of C and NASM codes).
 
 If you want to run it in your operating system, you also need to install these components:
 - QEMU (The kernel emulater);
-- losetup* (A command, which will mount to loop device);
-- dd* (A command, which will make up a disk image);
-- parted* (A part tool);
-- GRUB (The bootloader);
-- Python (The script runner).
+- xorriso (The ISO image builder)
 
 NOTE: The components with `*` means that it may pre-installed in your operating system.
 
@@ -36,7 +32,8 @@ We suggest you use `rustup` to install Rust.
 If you're using Debian or Ubuntu, you can try:
 ```bash
 sudo apt-get install gcc nasm make     # Must install
-sudo apt-get install qemu-system-x86 parted grub-efi-amd64 python3    # If you want to run the kernel in your OS
+sudo apt-get install xorriso    # If you want to build the ISO image
+sudo apt-get install qemu-system-x86    # If you want to run the kernel in your OS (MUST RUN ALL COMMAND HERE!!)
 ```
 
 ### Build
