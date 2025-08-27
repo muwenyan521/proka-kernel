@@ -20,8 +20,6 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-
-use limine::memory_map::EntryType;
 use proka_kernel::BASE_REVISION;
 
 /* C functions extern area */
@@ -50,17 +48,7 @@ pub extern "C" fn kernel_main() -> ! {
     println!("• IDT initialized");
 
     proka_kernel::interrupts::apic::init();
-
-    let memory_map = proka_kernel::MEMORY_MAP_REQUEST.get_response().unwrap();
-    serial_println!("All of memory map:");
-    for entry in memory_map.entries().iter() {
-        serial_println!(
-            "base: {}, lenght: {}, USABLE: {}",
-            entry.base,
-            entry.length,
-            entry.entry_type == EntryType::USABLE
-        );
-    }
+    println!("• APIC initialized");
 
     println!("• Kernel ready");
 
