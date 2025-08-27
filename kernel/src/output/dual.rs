@@ -5,9 +5,11 @@ use crate::output::serial::_print as serial_print;
 #[macro_export]
 macro_rules! dual_print {
     ($($arg:tt)*) => {
-        $crate::output::dual::_dual_print_serial(format_args!($($arg)*));
-        // 总是输出到控制台
-        $crate::output::dual::_dual_print_console(format_args!($($arg)*));
+        {
+            $crate::output::dual::_dual_print_serial(format_args!($($arg)*));
+            // 总是输出到控制台
+            $crate::output::dual::_dual_print_console(format_args!($($arg)*))
+        }
     };
 }
 
@@ -24,12 +26,12 @@ macro_rules! dual_println {
 
 // 内部函数：处理控制台打印
 #[doc(hidden)]
-pub fn _dual_print_console(args: core::fmt::Arguments) {
+pub(crate) fn _dual_print_console(args: core::fmt::Arguments) {
     console_print(args);
 }
 
 // 内部函数：处理串口打印
 #[doc(hidden)]
-pub fn _dual_print_serial(args: core::fmt::Arguments) {
+pub(crate) fn _dual_print_serial(args: core::fmt::Arguments) {
     serial_print(args);
 }

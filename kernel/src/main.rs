@@ -20,6 +20,7 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
+use log::info;
 use proka_kernel::BASE_REVISION;
 
 /* C functions extern area */
@@ -35,7 +36,9 @@ pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
-    println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION"));
+    proka_kernel::libs::logger::init_logger();
+
+    info!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION"));
     println!("• Hello, World!");
 
     proka_kernel::output::console::CONSOLE
