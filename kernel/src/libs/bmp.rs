@@ -2,7 +2,6 @@
 extern crate alloc;
 use crate::graphics::color;
 use alloc::vec::Vec;
-use core::mem;
 
 #[derive(Debug)]
 pub enum BmpError {

@@ -1,12 +1,16 @@
 extern crate alloc;
 use crate::MEMORY_MAP_REQUEST;
+use crate::println;
 use alloc::vec::Vec;
-use bitmap_allocator::{BitAlloc, BitAlloc4K};
+use bitmap_allocator::{BitAlloc, BitAlloc1M};
 use lazy_static::lazy_static;
 use limine::memory_map::EntryType;
 use spin::Mutex;
 use x86_64::PhysAddr;
 use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB};
+use x86_64::{align_up, align_down};
+
+const ALIGN_SIZE: u64 = 0x1000; // 4KiB
 
 /// Convert Physical address to Physical Frame
 fn addr_to_phys_frame(addr: Option<usize>) -> Option<PhysFrame> {
@@ -40,7 +44,7 @@ pub struct PhysFrameAlloc {
     /// The range of the physical frame allocator
     range: Vec<(usize, usize)>,
     /// The bitmap allocator
-    inner: Mutex<BitAlloc4K>,
+    inner: Mutex<BitAlloc1M>,
     /// Whether the allocator is initialized
     initialized: Mutex<bool>,
 }
@@ -49,19 +53,30 @@ impl PhysFrameAlloc {
     pub fn new() -> Self {
         Self {
             range: Vec::new(),
-            inner: Mutex::new(BitAlloc4K::default()),
+            inner: Mutex::new(BitAlloc1M::default()),
             initialized: Mutex::new(false),
         }
     }
 
     /// The initializator of physical frame allocator.
     pub fn init(&mut self, ranges: &[(usize, usize)]) {
+        // Check is allocaotr initialized
+        let mut initialized = self.initialized.lock();
+        if *initialized {
+            return; // Avoid double init
+        }
         self.range = ranges.to_vec();
         let mut guard = self.inner.lock();
+        let mut timer = 0;
         for &(start, end) in ranges {
+            // Align start and end
+            let start = align_up(start as u64, ALIGN_SIZE) as usize;
+            let end = align_down(end as u64, ALIGN_SIZE) as usize;
             guard.insert(start..end); // Add available range to bitmap allocator
+            println!("{}", timer);
+            timer += 1;
         }
-        *self.initialized.lock() = true;
+        *initialized = true;
     }
 
     fn is_initialized(&self) -> bool {
