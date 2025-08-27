@@ -50,8 +50,10 @@ impl File for MemFileHandle {
 
 #[derive(Debug)]
 struct MemVNode {
+    #[allow(dead_code)]
     name: String,
     typ: VNodeType,
+    #[allow(dead_code)]
     parent: Weak<MemVNode>,
     children: Mutex<BTreeMap<String, Arc<MemVNode>>>,
     // 对于文件，这里保存了对实际文件内容（MemFileContent）的共享引用。

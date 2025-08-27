@@ -1,6 +1,4 @@
-use core::hash::Hash;
-
-use crate::drivers::{DEVICE_MANAGER, Device, DeviceError, DeviceOps};
+use crate::drivers::{DEVICE_MANAGER, Device, DeviceError};
 extern crate alloc;
 use super::memfs::MemFs;
 use alloc::{
@@ -74,14 +72,13 @@ pub trait VNode: Send + Sync {
     fn open(&self) -> Result<Box<dyn File>, VfsError>;
     fn lookup(&self, name: &str) -> Result<Arc<dyn VNode>, VfsError>;
     fn create(&self, name: &str, typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError>;
-    fn as_device(&self) -> Option<Arc<dyn DeviceOps>> {
+    fn as_device(&self) -> Option<&Device> {
         None
     }
 }
 
 struct MountPoint {
     path: String,
-    fs: Arc<dyn FileSystem>,
     root: Arc<dyn VNode>,
 }
 
@@ -137,7 +134,6 @@ impl Vfs {
 
         self.mounts.lock().push(MountPoint {
             path: mount_point.to_string(),
-            fs: fs.clone(),
             root,
         });
 

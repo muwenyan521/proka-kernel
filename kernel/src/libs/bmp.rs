@@ -25,10 +25,8 @@ impl BmpImage {
         }
 
         // 解析BMP文件头
-        let width =
-            unsafe { mem::transmute::<[u8; 4], u32>([data[18], data[19], data[20], data[21]]) };
-        let height =
-            unsafe { mem::transmute::<[u8; 4], u32>([data[22], data[23], data[24], data[25]]) };
+        let width = u32::from_le_bytes([data[18], data[19], data[20], data[21]]);
+        let height = u32::from_le_bytes([data[22], data[23], data[24], data[25]]);
         let bpp = u16::from_le_bytes([data[28], data[29]]);
 
         // 目前只支持24位和32位BMP

@@ -105,8 +105,8 @@ pub struct Console<'a> {
 
     font_width: u32,
     font_height: u32,
-    font_line_height: f32, // Line height in font pixels (f32)
-    font_baseline: f32,    // Baseline offset in font pixels (f32)
+    //font_line_height: f32, // Line height in font pixels (f32)
+    font_baseline: f32, // Baseline offset in font pixels (f32)
 
     dirty_regions: Vec<Rect>,  // 存储需要重绘的矩形区域 (字符坐标)
     cursor_needs_redraw: bool, // 标记光标是否需要重绘
@@ -159,7 +159,7 @@ impl<'a> Console<'a> {
             current_bg_color: color::BLACK,
             font_width,  // 已是u32
             font_height, // 已是u32
-            font_line_height,
+            //font_line_height,
             font_baseline,
             dirty_regions: Vec::new(),
             cursor_needs_redraw: true, // 初始时光标需要绘制
@@ -209,6 +209,7 @@ impl<'a> Console<'a> {
 
     /// 清空渲染器上的所有像素，以背景色填充
     /// 此函数现在只在完全重绘屏幕时使用，例如滚动或改变背景色
+    #[allow(dead_code)]
     fn clear_screen_pixels(&mut self) {
         let raw_clear_color = self.renderer.get_clear_color(); // 保存原始清除色
         self.renderer.set_clear_color(self.current_bg_color);
