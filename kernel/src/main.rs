@@ -67,9 +67,11 @@ pub extern "C" fn kernel_main() -> ! {
 
     let mut device_manager = proka_kernel::drivers::DEVICE_MANAGER.lock();
 
-    device_manager.register_device(proka_kernel::drivers::block::ramfs::MemDevice::create_device());
+    device_manager.register_device(proka_kernel::drivers::block::RamFSDevice::create_device(
+        0, 10240,
+    ));
 
-    let mem_device = device_manager.get_device("mem").unwrap();
+    let mem_device = device_manager.get_device("ramfs-0").unwrap();
 
     mem_device.ops.write(1, &[0x42]).unwrap();
 

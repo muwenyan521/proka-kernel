@@ -1,31 +1,32 @@
 extern crate alloc;
 use super::super::{Device, DeviceError, DeviceOps, DeviceType};
+use alloc::format;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-pub struct MemDevice {
+pub struct RamFSDevice {
     data: Mutex<Vec<u8>>,
 }
 
-impl MemDevice {
+impl RamFSDevice {
     pub fn new(size: usize) -> Self {
         Self {
             data: Mutex::new(vec![0; size]),
         }
     }
 
-    pub fn create_device() -> Device {
+    pub fn create_device(id: u16, size: usize) -> Device {
         Device {
             device_type: DeviceType::Char,
-            name: "mem".into(),
-            ops: Arc::new(MemDevice::new(1024)), // 1KB内存设备
+            name: format!("ramfs-{}", id),
+            ops: Arc::new(RamFSDevice::new(size)), // 1KB内存设备
         }
     }
 }
 
-impl DeviceOps for MemDevice {
+impl DeviceOps for RamFSDevice {
     fn device_type(&self) -> DeviceType {
         DeviceType::Char
     }
