@@ -1,6 +1,6 @@
 extern crate alloc;
 use super::vfs::{File, FileSystem, Metadata, VNode, VNodeType, VfsError};
-use crate::{drivers::Device, println};
+use crate::{drivers::Device, println}; // Keep println for debugging
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -11,23 +11,30 @@ use alloc::{
 use core::fmt;
 use spin::{Mutex, RwLock};
 
-#[derive(Debug, Clone)]
-struct MemFile {
+#[derive(Debug)]
+struct MemFileContent {
     data: Vec<u8>,
     metadata: Metadata,
 }
 
-impl File for MemFile {
+#[derive(Debug)]
+struct MemFileHandle {
+    content_arc: Arc<RwLock<MemFileContent>>,
+}
+
+impl File for MemFileHandle {
     fn read(&self, buf: &mut [u8]) -> Result<usize, VfsError> {
-        println!("{}", self.data.len());
-        let len = core::cmp::min(buf.len(), self.data.len());
-        buf[..len].copy_from_slice(&self.data[..len]);
+        let content = self.content_arc.read();
+        println!("MemFileHandle::read - data.len(): {}", content.data.len()); // Debug print
+        let len = core::cmp::min(buf.len(), content.data.len());
+        buf[..len].copy_from_slice(&content.data[..len]);
         Ok(len)
     }
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, VfsError> {
-        self.data.extend_from_slice(buf);
-        self.metadata.size = self.data.len() as u64;
+        let mut content = self.content_arc.write();
+        content.data.extend_from_slice(buf);
+        content.metadata.size = content.data.len() as u64; // 更新文件大小
         Ok(buf.len())
     }
 
@@ -36,7 +43,8 @@ impl File for MemFile {
     }
 
     fn stat(&self) -> Result<Metadata, VfsError> {
-        Ok(self.metadata.clone())
+        let content = self.content_arc.read();
+        Ok(content.metadata.clone())
     }
 }
 
@@ -46,26 +54,32 @@ struct MemVNode {
     typ: VNodeType,
     parent: Weak<MemVNode>,
     children: Mutex<BTreeMap<String, Arc<MemVNode>>>,
-    file: RwLock<Option<MemFile>>,
+    // 对于文件，这里保存了对实际文件内容（MemFileContent）的共享引用。
+    // 对于目录，这里是 None。
+    file_content_arc: Option<Arc<RwLock<MemFileContent>>>,
+    // 这个 Metadata 是当前 VNode 自身的元数据，例如目录的元数据。
+    // 对于文件，VNode::metadata() 会从 file_content_arc 中获取。
     metadata: Metadata,
 }
 
 impl MemVNode {
     fn new(name: String, typ: VNodeType, parent: Weak<MemVNode>, metadata: Metadata) -> Arc<Self> {
+        let file_content_arc = if typ == VNodeType::File {
+            Some(Arc::new(RwLock::new(MemFileContent {
+                data: Vec::new(),
+                metadata: metadata.clone(), // 文件的初始元数据
+            })))
+        } else {
+            None
+        };
+
         Arc::new(Self {
             name,
             typ,
             parent,
             children: Mutex::new(BTreeMap::new()),
-            file: RwLock::new(if typ == VNodeType::File {
-                Some(MemFile {
-                    data: Vec::new(),
-                    metadata: metadata.clone(),
-                })
-            } else {
-                None
-            }),
-            metadata,
+            file_content_arc,
+            metadata, // VNode 自身的元数据
         })
     }
 }
@@ -76,16 +90,35 @@ impl VNode for MemVNode {
     }
 
     fn metadata(&self) -> Result<Metadata, VfsError> {
-        Ok(self.metadata.clone())
+        match self.typ {
+            VNodeType::File => {
+                // 对于文件，从实际文件内容中获取元数据
+                if let Some(content_arc) = self.file_content_arc.as_ref() {
+                    let content = content_arc.read();
+                    Ok(content.metadata.clone())
+                } else {
+                    Err(VfsError::IoError) // 文件 VNode 但没有内容，不应该发生
+                }
+            }
+            _ => {
+                // 对于目录、符号链接等，使用 VNode 自身的元数据
+                Ok(self.metadata.clone())
+            }
+        }
     }
 
     fn open(&self) -> Result<Box<dyn File>, VfsError> {
         if self.typ != VNodeType::File {
             return Err(VfsError::NotAFile);
         }
-        let file = self.file.read().clone();
-        file.map(|f| Box::new(f) as Box<dyn File>)
-            .ok_or(VfsError::IoError)
+
+        let content_arc = self
+            .file_content_arc
+            .as_ref()
+            .ok_or(VfsError::IoError)?
+            .clone(); // 克隆 Arc，获得对共享内容的引用
+
+        Ok(Box::new(MemFileHandle { content_arc }))
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn VNode>, VfsError> {
@@ -112,22 +145,16 @@ impl VNode for MemVNode {
         let now = 0; // 在实际系统中应该是当前时间
         let metadata = Metadata {
             size: 0,
-            permissions: 0o644,
+            permissions: if typ == VNodeType::Dir { 0o755 } else { 0o644 }, // 根据类型设置默认权限
             uid: 0,
             gid: 0,
             ctime: now,
             mtime: now,
         };
 
-        let self_arc = unsafe {
-            // 安全的因为我们知道self是MemVNode的一部分
-            Arc::from_raw(self as *const MemVNode as *const MemVNode as *mut MemVNode)
-        };
-        let parent = Arc::downgrade(&self_arc);
-        // 避免Arc被释放
-        Arc::into_raw(self_arc);
-
-        let node = MemVNode::new(name.to_string(), typ, parent, metadata);
+        // 为了简化和避免 unsafe，这里创建的子节点父引用暂时为 Weak::new()。
+        // 如果需要正确的父子链，VNode::create 方法的签名可能需要修改。
+        let node = MemVNode::new(name.to_string(), typ, Weak::new(), metadata);
 
         children.insert(name.to_string(), node.clone());
         Ok(node as Arc<dyn VNode>)
@@ -152,6 +179,7 @@ impl FileSystem for MemFs {
             mtime: now,
         };
 
+        // 根节点的父节点总是空的
         Ok(MemVNode::new(
             "".to_string(),
             VNodeType::Dir,
