@@ -34,6 +34,7 @@ pub fn init() {
             println!("APIC is available");
         }
     } else {
-        println!("APIC is not available");
+        println!("ERROR: APIC is not available");
+        panic!("ERROR: APIC is not available");
     }
 }

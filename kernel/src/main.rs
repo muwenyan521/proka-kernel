@@ -46,7 +46,6 @@ pub extern "C" fn kernel_main() -> ! {
 
     proka_kernel::interrupts::gdt::init();
     println!("• GDT Initialized");
-
     proka_kernel::interrupts::idt::init_idt();
     println!("• IDT initialized");
 
@@ -65,20 +64,18 @@ pub extern "C" fn kernel_main() -> ! {
 
     println!("• Kernel ready");
 
-    let mut device_manager = proka_kernel::drivers::DEVICE_MANAGER.lock();
-
-    device_manager.register_device(proka_kernel::drivers::block::RamFSDevice::create_device(
-        0, 10240,
-    ));
-
-    let mem_device = device_manager.get_device("ramfs-0").unwrap();
-
-    mem_device.ops.write(1, &[0x42]).unwrap();
-
-    let mut buf = [0x41];
-    mem_device.ops.read(1, &mut buf).unwrap();
-
-    dual_print!("{}", buf[0] as char);
+    let vfs = proka_kernel::fs::vfs::Vfs::new();
+    vfs.mount(None, "/", "memfs").unwrap();
+    let root = vfs.lookup("/").unwrap();
+    let file = root
+        .create("test.txt", proka_kernel::fs::vfs::VNodeType::File)
+        .unwrap();
+    let file_handle = file.open().unwrap();
+    file_handle.write(b"Hello, world!").unwrap();
+    let file_handle = file.open().unwrap();
+    let mut buf = [0u8; 128];
+    let contents = file_handle.read(&mut buf).unwrap();
+    println!("{:?}", buf);
 
     loop {
         x86_64::instructions::hlt();

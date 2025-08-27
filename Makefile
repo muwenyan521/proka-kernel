@@ -11,7 +11,7 @@ BUILD_DIRS = kernel
 OBJ_DIR = $(PWD)/target/obj
 LDFLAGS = -nostdlib
 XORRISOFLAGS = -as mkisofs --efi-boot limine/limine-uefi-cd.bin
-QEMU_FLAGS := -bios ./assets/OVMF.fd -cdrom proka-kernel.iso --machine q35 -m 1G 
+QEMU_FLAGS := -bios ./assets/OVMF.fd -cdrom proka-kernel.iso --machine q35 -m 1G
 # QEMU_KVM := -enable-kvm -cpu host
 # QEMU_reOUT := > ./qemu.log
 QEMU_OUT := -serial stdio $(QEMU_reOUT)
@@ -34,7 +34,7 @@ makeiso: all kernel/kernel
 	@echo "ISO image built: proka-kernel.iso"
 
 run: makeiso
-	qemu-system-x86_64 -enable-kvm -cpu host $(QEMU_FLAGS) $(QEMU_OUT)
+	qemu-system-x86_64 -enable-kvm $(QEMU_FLAGS) $(QEMU_OUT)
 	@echo "QEMU started"
 
 mkdir:

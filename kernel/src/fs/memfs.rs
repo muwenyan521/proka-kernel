@@ -1,6 +1,7 @@
 extern crate alloc;
 use crate::drivers::DeviceOps;
 use crate::fs::vfs::{File, FileSystem, Metadata, VNode, VNodeType, VfsError};
+use crate::println;
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -101,6 +102,7 @@ impl VNode for MemDir {
     }
 
     fn create(&self, name: &str, typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError> {
+        println!("create: {}", name);
         if self.children.lock().contains_key(name) {
             return Err(VfsError::AlreadyExists);
         }
