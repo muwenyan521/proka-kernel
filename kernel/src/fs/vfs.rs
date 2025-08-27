@@ -92,7 +92,7 @@ pub struct Vfs {
 impl Vfs {
     pub fn new() -> Self {
         let memfs = Arc::new(MemFs);
-        let root = memfs.mount(None, None).unwrap();
+        let root = memfs.mount(None, None).expect("Could not mount memfs");
         let mut registry: BTreeMap<&'static str, Arc<dyn FileSystem>> = BTreeMap::new();
         registry.insert("memfs", memfs);
         Self {

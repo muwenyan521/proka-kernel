@@ -22,7 +22,7 @@ fn addr_to_phys_frame(addr: Option<usize>) -> Option<PhysFrame> {
 lazy_static! {
     pub static ref GLOBAL_FRAME_ALLOCATOR: PhysFrameAlloc = {
         let mut frame_allocator = PhysFrameAlloc::new();
-        let memory_map = MEMORY_MAP_REQUEST.get_response().unwrap();
+        let memory_map = MEMORY_MAP_REQUEST.get_response().expect("Failed to get memory map");
 
         // Collact all usable memory region
         let mut usable_ranges = Vec::new();

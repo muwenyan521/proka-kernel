@@ -376,7 +376,7 @@ impl<'a> Renderer<'a> {
                 }
             }
             // 交点排序
-            intersections.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            intersections.sort_by(|a, b| a.partial_cmp(b).expect("Float comparison failed"));
             // 填充扫描线交点之间的区域
             for i in (0..intersections.len()).step_by(2) {
                 if i + 1 >= intersections.len() {
@@ -430,7 +430,7 @@ impl<'a> Renderer<'a> {
                 }
             }
             // 交点排序
-            intersections.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            intersections.sort_by(|a, b| a.partial_cmp(b).expect("Float comparison failed"));
             // 填充扫描线交点之间的区域（奇偶规则）
             let mut inside = false;
             for i in 0..intersections.len() {

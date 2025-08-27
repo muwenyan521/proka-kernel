@@ -20,16 +20,16 @@ pub const TAB_SPACES: usize = 4;
 lazy_static! {
     static ref DEFAULT_FONT: FontRef<'static> = {
         let font_data = include_bytes!("../../fonts/maple-mono.ttf");
-        FontRef::try_from_slice(font_data).unwrap()
+        FontRef::try_from_slice(font_data).expect("Failed to load font")
     };
     pub static ref CONSOLE: Mutex<Console<'static>> = Mutex::new({
         let renderer = Renderer::new(
             FRAMEBUFFER_REQUEST
                 .get_response()
-                .unwrap()
+                .expect("Framebuffer request failed")
                 .framebuffers()
                 .next()
-                .unwrap(),
+                .expect("No framebuffer found"),
         );
         Console::new(renderer, DEFAULT_FONT.clone())
     });
@@ -117,7 +117,9 @@ pub struct Console<'a> {
 impl<'a> Console<'a> {
     pub fn new(renderer: Renderer<'a>, font: FontRef<'static>) -> Self {
         // 使用as_scaled()直接获取ScaledFont，避免重复创建
-        let scale = font.pt_to_px_scale(DEFAULT_FONT_SIZE).unwrap();
+        let scale = font
+            .pt_to_px_scale(DEFAULT_FONT_SIZE)
+            .unwrap_or(PxScale::from(16.0));
         let scaled_font = font.as_scaled(scale);
 
         let ascent = scaled_font.ascent();
@@ -591,5 +593,8 @@ macro_rules! println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    CONSOLE.lock().write_fmt(args).unwrap();
+    CONSOLE
+        .lock()
+        .write_fmt(args)
+        .expect("Failed to write to console");
 }

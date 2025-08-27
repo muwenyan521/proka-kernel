@@ -1,5 +1,6 @@
 use crate::serial_println;
 use x86_64::{
+    VirtAddr,
     registers::control::Cr2,
     structures::idt::{InterruptStackFrame, PageFaultErrorCode},
 };
@@ -64,7 +65,11 @@ pub extern "x86-interrupt" fn pagefault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    let fault_address = Cr2::read().unwrap();
+    let fault_address = match Cr2::read() {
+        Ok(addr) => addr,
+        Err(_) => VirtAddr::zero(),
+    };
+
     serial_println!(
         "EXCEPTION: PAGE FAULT at {:#x}\n \
          Cause: {:?}\n \
