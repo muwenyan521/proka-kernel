@@ -1,4 +1,6 @@
-use crate::drivers::{DEVICE_MANAGER, DeviceError, DeviceOps};
+use core::hash::Hash;
+
+use crate::drivers::{DEVICE_MANAGER, Device, DeviceError, DeviceOps};
 extern crate alloc;
 use super::memfs::MemFs;
 use alloc::{
@@ -37,8 +39,7 @@ pub enum VNodeType {
     File,
     Dir,
     SymLink,
-    CharDevice,
-    BlockDevice,
+    Device,
 }
 
 #[derive(Debug, Clone)]
@@ -53,12 +54,17 @@ pub struct Metadata {
 
 pub trait File: Send + Sync {
     fn read(&self, buf: &mut [u8]) -> Result<usize, VfsError>;
-    fn write(&self, buf: &[u8]) -> Result<usize, VfsError>;
+    fn write(&mut self, buf: &[u8]) -> Result<usize, VfsError>;
     fn seek(&self, pos: u64) -> Result<u64, VfsError>;
+    fn stat(&self) -> Result<Metadata, VfsError>;
 }
 
 pub trait FileSystem: Send + Sync {
-    fn mount(&self, device: Option<Arc<dyn DeviceOps>>) -> Result<Arc<dyn VNode>, VfsError>;
+    fn mount(
+        &self,
+        device: Option<&Device>,
+        args: Option<&[&str]>,
+    ) -> Result<Arc<dyn VNode>, VfsError>;
     fn fs_type(&self) -> &'static str;
 }
 
@@ -88,8 +94,8 @@ pub struct Vfs {
 
 impl Vfs {
     pub fn new() -> Self {
-        let memfs = Arc::new(MemFs) as Arc<dyn FileSystem>;
-        let root = memfs.mount(None).unwrap();
+        let memfs = Arc::new(MemFs);
+        let root = memfs.mount(None, None).unwrap();
         let mut registry: BTreeMap<&'static str, Arc<dyn FileSystem>> = BTreeMap::new();
         registry.insert("memfs", memfs);
         Self {
@@ -98,14 +104,17 @@ impl Vfs {
             fs_registry: RwLock::new(registry),
         }
     }
+
     pub fn register_fs(&self, fs: Arc<dyn FileSystem>) {
         self.fs_registry.write().insert(fs.fs_type(), fs);
     }
+
     pub fn mount(
         &self,
-        device: Option<&str>,
+        device_str: Option<&str>,
         mount_point: &str,
         fs_type: &str,
+        args: Option<&[&str]>,
     ) -> Result<(), VfsError> {
         let fs = self
             .fs_registry
@@ -113,28 +122,49 @@ impl Vfs {
             .get(fs_type)
             .cloned()
             .ok_or(VfsError::FsTypeNotSupported)?;
-        let device_ops = if let Some(dev) = device {
-            if let Some(dev) = DEVICE_MANAGER.lock().get_device(dev) {
-                Some(dev.ops.clone())
-            } else {
-                return Err(VfsError::DeviceNotFound);
-            }
+
+        let device_manager = DEVICE_MANAGER.lock();
+        let device = if let Some(dev) = device_str {
+            device_manager.get_device(dev)
         } else {
             None
         };
-        let root = fs.mount(device_ops)?;
+
+        let root = fs.mount(device, args)?;
+
+        // 在 `mounts` 修改前释放 `device_manager`（避免死锁）
+        drop(device_manager);
+
         self.mounts.lock().push(MountPoint {
             path: mount_point.to_string(),
             fs: fs.clone(),
             root,
         });
+
         Ok(())
     }
+
     pub fn lookup(&self, path: &str) -> Result<Arc<dyn VNode>, VfsError> {
         let path = path.trim_matches('/');
         if path.is_empty() {
-            return Ok(self.root.clone());
+            return Ok(self.root.clone()); // 根目录直接返回
         }
+        // 1. 检查路径是否匹配某个挂载点
+        let mounts = self.mounts.lock();
+        if let Some(mount) = mounts.iter().find(|m| path.starts_with(&m.path)) {
+            // 截取挂载点之后的子路径（如 "/mnt/data" -> "data"）
+            let subpath = path[mount.path.len()..].trim_matches('/');
+            if subpath.is_empty() {
+                return Ok(mount.root.clone()); // 直接访问挂载点根目录
+            }
+            // 从挂载点的根节点开始查找子路径
+            let mut current = mount.root.clone();
+            for component in subpath.split('/') {
+                current = current.lookup(component)?;
+            }
+            return Ok(current);
+        }
+        // 2. 若无挂载点匹配，从全局根节点查找
         let mut current = self.root.clone();
         for component in path.split('/') {
             current = current.lookup(component)?;

@@ -65,17 +65,28 @@ pub extern "C" fn kernel_main() -> ! {
     println!("• Kernel ready");
 
     let vfs = proka_kernel::fs::vfs::Vfs::new();
-    vfs.mount(None, "/", "memfs").unwrap();
-    let root = vfs.lookup("/").unwrap();
-    let file = root
-        .create("test.txt", proka_kernel::fs::vfs::VNodeType::File)
+    vfs.mount(None, "/", "memfs", None).unwrap();
+    let root_node = vfs.lookup("/").unwrap();
+    root_node
+        .create("myfile.txt", proka_kernel::fs::vfs::VNodeType::File)
         .unwrap();
-    let file_handle = file.open().unwrap();
-    file_handle.write(b"Hello, world!").unwrap();
-    let file_handle = file.open().unwrap();
-    let mut buf = [0u8; 128];
-    let contents = file_handle.read(&mut buf).unwrap();
-    println!("{:?}", buf);
+    let file_node = vfs.lookup("/myfile.txt").unwrap();
+
+    {
+        let mut file = file_node.open().unwrap();
+        file.write(b"Hello, MemFs!").unwrap();
+    }
+
+    // 读取文件
+    {
+        let file = file_node.open().unwrap();
+        let mut buf = [0u8; 32];
+        let len = file.read(&mut buf).unwrap();
+        println!(
+            "Read content: {}",
+            alloc::string::String::from_utf8_lossy(&buf[..len])
+        );
+    }
 
     loop {
         x86_64::instructions::hlt();

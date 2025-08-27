@@ -34,7 +34,7 @@ pub fn init() {
             println!("APIC is available");
         }
     } else {
-        println!("ERROR: APIC is not available");
-        panic!("ERROR: APIC is not available");
+        println!("ERROR: Don't support PIC mode!");
+        panic!("ERROR: Don't support PIC mode!");
     }
 }

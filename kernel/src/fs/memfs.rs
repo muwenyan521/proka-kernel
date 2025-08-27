@@ -1,88 +1,78 @@
 extern crate alloc;
-use crate::drivers::DeviceOps;
-use crate::fs::vfs::{File, FileSystem, Metadata, VNode, VNodeType, VfsError};
-use crate::println;
+use super::vfs::{File, FileSystem, Metadata, VNode, VNodeType, VfsError};
+use crate::{drivers::Device, println};
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
     string::{String, ToString},
-    sync::Arc,
+    sync::{Arc, Weak},
     vec::Vec,
 };
-use spin::Mutex;
+use core::fmt;
+use spin::{Mutex, RwLock};
 
-// --- 内存文件系统实现 ---
+#[derive(Debug, Clone)]
 struct MemFile {
-    data: Mutex<Vec<u8>>,
-    pos: Mutex<u64>,
+    data: Vec<u8>,
     metadata: Metadata,
 }
 
 impl File for MemFile {
     fn read(&self, buf: &mut [u8]) -> Result<usize, VfsError> {
-        let mut pos = self.pos.lock();
-        let data = self.data.lock();
-        let len = core::cmp::min(buf.len(), (data.len() as u64 - *pos) as usize);
-        buf[..len].copy_from_slice(&data[*pos as usize..][..len]);
-        *pos += len as u64;
+        println!("{}", self.data.len());
+        let len = core::cmp::min(buf.len(), self.data.len());
+        buf[..len].copy_from_slice(&self.data[..len]);
         Ok(len)
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize, VfsError> {
-        let mut data = self.data.lock();
-        let mut pos = self.pos.lock();
-        let write_pos = *pos as usize;
-
-        if write_pos + buf.len() > data.len() {
-            data.resize(write_pos + buf.len(), 0);
-        }
-
-        data[write_pos..write_pos + buf.len()].copy_from_slice(buf);
-        *pos += buf.len() as u64;
+    fn write(&mut self, buf: &[u8]) -> Result<usize, VfsError> {
+        self.data.extend_from_slice(buf);
+        self.metadata.size = self.data.len() as u64;
         Ok(buf.len())
     }
 
-    fn seek(&self, pos: u64) -> Result<u64, VfsError> {
-        let mut current = self.pos.lock();
-        *current = pos;
-        Ok(pos)
-    }
-}
-
-impl VNode for MemFile {
-    fn node_type(&self) -> VNodeType {
-        VNodeType::File
+    fn seek(&self, _pos: u64) -> Result<u64, VfsError> {
+        Ok(0) // 简化实现，不支持seek
     }
 
-    fn metadata(&self) -> Result<Metadata, VfsError> {
+    fn stat(&self) -> Result<Metadata, VfsError> {
         Ok(self.metadata.clone())
     }
-
-    fn open(&self) -> Result<Box<dyn File>, VfsError> {
-        Ok(Box::new(MemFile {
-            data: Mutex::new(self.data.lock().clone()),
-            pos: Mutex::new(0),
-            metadata: self.metadata.clone(),
-        }))
-    }
-
-    fn lookup(&self, _name: &str) -> Result<Arc<dyn VNode>, VfsError> {
-        Err(VfsError::NotADirectory)
-    }
-
-    fn create(&self, _name: &str, _typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError> {
-        Err(VfsError::NotADirectory)
-    }
 }
 
-struct MemDir {
-    children: Mutex<BTreeMap<String, Arc<dyn VNode>>>,
+#[derive(Debug)]
+struct MemVNode {
+    name: String,
+    typ: VNodeType,
+    parent: Weak<MemVNode>,
+    children: Mutex<BTreeMap<String, Arc<MemVNode>>>,
+    file: RwLock<Option<MemFile>>,
     metadata: Metadata,
 }
 
-impl VNode for MemDir {
+impl MemVNode {
+    fn new(name: String, typ: VNodeType, parent: Weak<MemVNode>, metadata: Metadata) -> Arc<Self> {
+        Arc::new(Self {
+            name,
+            typ,
+            parent,
+            children: Mutex::new(BTreeMap::new()),
+            file: RwLock::new(if typ == VNodeType::File {
+                Some(MemFile {
+                    data: Vec::new(),
+                    metadata: metadata.clone(),
+                })
+            } else {
+                None
+            }),
+            metadata,
+        })
+    }
+}
+
+impl VNode for MemVNode {
     fn node_type(&self) -> VNodeType {
-        VNodeType::Dir
+        self.typ
     }
 
     fn metadata(&self) -> Result<Metadata, VfsError> {
@@ -90,73 +80,93 @@ impl VNode for MemDir {
     }
 
     fn open(&self) -> Result<Box<dyn File>, VfsError> {
-        Err(VfsError::NotAFile)
+        if self.typ != VNodeType::File {
+            return Err(VfsError::NotAFile);
+        }
+        let file = self.file.read().clone();
+        file.map(|f| Box::new(f) as Box<dyn File>)
+            .ok_or(VfsError::IoError)
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn VNode>, VfsError> {
+        if self.typ != VNodeType::Dir {
+            return Err(VfsError::NotADirectory);
+        }
         self.children
             .lock()
             .get(name)
-            .cloned()
+            .map(|n| n.clone() as Arc<dyn VNode>)
             .ok_or(VfsError::NotFound)
     }
 
     fn create(&self, name: &str, typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError> {
-        println!("create: {}", name);
-        if self.children.lock().contains_key(name) {
+        if self.typ != VNodeType::Dir {
+            return Err(VfsError::NotADirectory);
+        }
+
+        let mut children = self.children.lock();
+        if children.contains_key(name) {
             return Err(VfsError::AlreadyExists);
         }
 
-        let node: Arc<dyn VNode> = match typ {
-            VNodeType::File => Arc::new(MemFile {
-                data: Mutex::new(Vec::new()),
-                pos: Mutex::new(0),
-                metadata: Metadata {
-                    size: 0,
-                    permissions: 0o644,
-                    uid: 0,
-                    gid: 0,
-                    ctime: 0,
-                    mtime: 0,
-                },
-            }),
-            VNodeType::Dir => Arc::new(MemDir {
-                children: Mutex::new(BTreeMap::new()),
-                metadata: Metadata {
-                    size: 0,
-                    permissions: 0o755,
-                    uid: 0,
-                    gid: 0,
-                    ctime: 0,
-                    mtime: 0,
-                },
-            }),
-            _ => return Err(VfsError::InvalidArgument),
+        let now = 0; // 在实际系统中应该是当前时间
+        let metadata = Metadata {
+            size: 0,
+            permissions: 0o644,
+            uid: 0,
+            gid: 0,
+            ctime: now,
+            mtime: now,
         };
 
-        self.children.lock().insert(name.to_string(), node.clone());
-        Ok(node)
+        let self_arc = unsafe {
+            // 安全的因为我们知道self是MemVNode的一部分
+            Arc::from_raw(self as *const MemVNode as *const MemVNode as *mut MemVNode)
+        };
+        let parent = Arc::downgrade(&self_arc);
+        // 避免Arc被释放
+        Arc::into_raw(self_arc);
+
+        let node = MemVNode::new(name.to_string(), typ, parent, metadata);
+
+        children.insert(name.to_string(), node.clone());
+        Ok(node as Arc<dyn VNode>)
     }
 }
 
 pub struct MemFs;
 
 impl FileSystem for MemFs {
-    fn mount(&self, _device: Option<Arc<dyn DeviceOps>>) -> Result<Arc<dyn VNode>, VfsError> {
-        Ok(Arc::new(MemDir {
-            children: Mutex::new(BTreeMap::new()),
-            metadata: Metadata {
-                size: 0,
-                permissions: 0o755,
-                uid: 0,
-                gid: 0,
-                ctime: 0,
-                mtime: 0,
-            },
-        }))
+    fn mount(
+        &self,
+        _device: Option<&Device>,
+        _args: Option<&[&str]>,
+    ) -> Result<Arc<dyn VNode>, VfsError> {
+        let now = 0; // 在实际系统中应该是当前时间
+        let metadata = Metadata {
+            size: 0,
+            permissions: 0o755,
+            uid: 0,
+            gid: 0,
+            ctime: now,
+            mtime: now,
+        };
+
+        Ok(MemVNode::new(
+            "".to_string(),
+            VNodeType::Dir,
+            Weak::new(),
+            metadata,
+        ))
     }
 
     fn fs_type(&self) -> &'static str {
         "memfs"
+    }
+}
+
+impl fmt::Debug for MemFs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemFs").finish()
     }
 }
