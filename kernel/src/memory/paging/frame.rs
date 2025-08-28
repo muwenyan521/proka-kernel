@@ -1,16 +1,17 @@
 extern crate alloc;
 use crate::MEMORY_MAP_REQUEST;
-use crate::println;
 use alloc::vec::Vec;
-use bitmap_allocator::{BitAlloc, BitAlloc1M};
+use bitmap_allocator::{BitAlloc, BitAlloc16M};
 use lazy_static::lazy_static;
 use limine::memory_map::EntryType;
+use log::error;
 use spin::Mutex;
 use x86_64::PhysAddr;
 use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB};
-use x86_64::{align_up, align_down};
+use x86_64::{align_down, align_up};
 
-const ALIGN_SIZE: u64 = 0x1000; // 4KiB
+// BitAlloc16M supports up to 64GiB (0x1_0000_00000)
+const BIT_ALLOC_16M_CAP: usize = 0x1_0000_00000;
 
 /// Convert Physical address to Physical Frame
 fn addr_to_phys_frame(addr: Option<usize>) -> Option<PhysFrame> {
@@ -20,7 +21,7 @@ fn addr_to_phys_frame(addr: Option<usize>) -> Option<PhysFrame> {
 }
 
 lazy_static! {
-    pub static ref GLOBAL_FRAME_ALLOCATOR: PhysFrameAlloc = {
+    pub static ref GLOBAL_FRAME_ALLOCATOR: Mutex<PhysFrameAlloc> = {
         let mut frame_allocator = PhysFrameAlloc::new();
         let memory_map = MEMORY_MAP_REQUEST.get_response().expect("Failed to get memory map");
 
@@ -36,7 +37,7 @@ lazy_static! {
 
         // Initialize the frame allocator in ONLY 1 TIME
         frame_allocator.init(&usable_ranges);
-        frame_allocator
+        Mutex::new(frame_allocator)
     };
 }
 
@@ -44,7 +45,7 @@ pub struct PhysFrameAlloc {
     /// The range of the physical frame allocator
     range: Vec<(usize, usize)>,
     /// The bitmap allocator
-    inner: Mutex<BitAlloc1M>,
+    inner: Mutex<BitAlloc16M>,
     /// Whether the allocator is initialized
     initialized: Mutex<bool>,
 }
@@ -53,30 +54,43 @@ impl PhysFrameAlloc {
     pub fn new() -> Self {
         Self {
             range: Vec::new(),
-            inner: Mutex::new(BitAlloc1M::default()),
+            inner: Mutex::new(BitAlloc16M::default()),
             initialized: Mutex::new(false),
         }
     }
 
     /// The initializator of physical frame allocator.
     pub fn init(&mut self, ranges: &[(usize, usize)]) {
-        // Check is allocaotr initialized
+        // Check if allocator initialized
         let mut initialized = self.initialized.lock();
         if *initialized {
             return; // Avoid double init
         }
         self.range = ranges.to_vec();
         let mut guard = self.inner.lock();
-        let mut timer = 0;
+
         for &(start, end) in ranges {
-            // Align start and end
-            let start = align_up(start as u64, ALIGN_SIZE) as usize;
-            let end = align_down(end as u64, ALIGN_SIZE) as usize;
-            guard.insert(start..end); // Add available range to bitmap allocator
-            println!("{}", timer);
-            timer += 1;
+            // Align start and end to page boundary (4KiB)
+            let start = align_up(start as u64, 0x1000) as usize;
+            let end = align_down(end as u64, 0x1000) as usize;
+
+            // Skip invalid ranges
+            if start >= end {
+                continue;
+            }
+
+            // Truncate to BitAlloc16M capacity
+            let end = end.min(BIT_ALLOC_16M_CAP);
+
+            if start < end {
+                guard.insert(start..end); // Add valid range to allocator
+            }
         }
         *initialized = true;
+    }
+
+    pub fn range(&self) -> &[(usize, usize)] {
+        &self.range
     }
 
     fn is_initialized(&self) -> bool {
@@ -88,6 +102,14 @@ impl PhysFrameAlloc {
             return None;
         }
         let result = self.inner.lock().alloc();
+
+        // Check is the allocated address in the available range
+        if let Some(addr) = result {
+            if addr >= BIT_ALLOC_16M_CAP {
+                return None;
+            }
+        }
+
         addr_to_phys_frame(result)
     }
 
@@ -95,6 +117,11 @@ impl PhysFrameAlloc {
         if !self.is_initialized() {
             return;
         }
+        // Check is the key out of bit alloc
+        if key >= BIT_ALLOC_16M_CAP {
+            return;
+        }
+
         // Check if the key is within the initialized range
         let mut is_in_managed_range = false;
         for &(start, end) in &self.range {
@@ -114,8 +141,8 @@ impl PhysFrameAlloc {
             inner.dealloc(key);
         } else {
             // This frame was not allocated, maybe log an error
-            // Temporary solution: panic
-            panic!("Deallocating unallocated frame");
+            // In order to avoid kernel fucked up, use log::error to handle.
+            error!("Deallocating unallocated frame: {:?}", key);
         }
     }
 }

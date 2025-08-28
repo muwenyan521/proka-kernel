@@ -11,7 +11,6 @@ use core::panic::PanicInfo;
 #[panic_handler]
 pub fn panic(info: &PanicInfo) -> ! {
     serial_println!("{}", info);
-    x86_64::instructions::interrupts::int3();
     loop {}
 }
 

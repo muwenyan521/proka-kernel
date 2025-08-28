@@ -20,7 +20,7 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-use log::{debug, info};
+use log::info;
 use proka_kernel::BASE_REVISION;
 use proka_kernel::drivers::init_devices;
 /* C functions extern area */
@@ -36,16 +36,17 @@ pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
-    init_devices();
-
-    proka_kernel::libs::logger::init_logger(); // 初始化日志系统
-
-    // 隐藏光标
+    proka_kernel::libs::logger::init_logger(); // Init log system
+    
     proka_kernel::output::console::CONSOLE
         .lock()
         .cursor_hidden();
 
-    println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION")); // 输出欢迎信息
+    println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION")); // Print welcome message
+
+    proka_kernel::output::console::CONSOLE
+        .lock()
+        .cursor_visible();
 
     // 初始化各个模块
     proka_kernel::interrupts::gdt::init();
@@ -54,8 +55,12 @@ pub extern "C" fn kernel_main() -> ! {
     info!("IDT initialized");
     proka_kernel::interrupts::apic::init();
     info!("APIC initialized");
+    init_devices();
+    info!("Devices initialized");
 
-    success!("Kernel ready!");
+    proka_kernel::memory::paging::table::init_page_table();
+
+    success!("• Kernel ready");
 
     let vfs = proka_kernel::fs::vfs::Vfs::new();
     vfs.mount(None, "/", "memfs", None).unwrap();
@@ -70,7 +75,7 @@ pub extern "C" fn kernel_main() -> ! {
         file.write(b"Hello, MemFs!").unwrap();
     }
 
-    // 读取文件
+    // Read file
     {
         let file = file_node.open().unwrap();
         let mut buf = [0u8; 32];

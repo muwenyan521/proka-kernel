@@ -5,7 +5,7 @@
 # order to help us to make a Rust kernel more easily.
 #
 #
-.PHONY: mkdir clean debug
+.PHONY: clean debug run makeiso
 # Define some basic variables
 BUILD_DIRS = kernel
 OBJ_DIR = $(PWD)/target/obj
@@ -16,8 +16,8 @@ QEMU_FLAGS := -bios ./assets/OVMF.fd -cdrom proka-kernel.iso --machine q35 -m 1G
 # QEMU_reOUT := > ./qemu.log
 QEMU_OUT := -serial stdio $(QEMU_reOUT)
 # Build the clean codes (easy, just run the Makefile in each dirs)
-all: clean mkdir
-        # Iterate all the BUILD_DIRS.
+all:
+    # Iterate all the BUILD_DIRS.
 	$(foreach dir, $(BUILD_DIRS), make -C $(dir) OBJ_DIR=$(OBJ_DIR);)
 
 ## Build the ISO image
@@ -37,8 +37,10 @@ run: makeiso
 	qemu-system-x86_64 -enable-kvm $(QEMU_FLAGS) $(QEMU_OUT)
 	@echo "QEMU started"
 
-mkdir:
-	mkdir -p $(OBJ_DIR)
+debug: makeiso
+	qemu-system-x86_64 -enable-kvm $(QEMU_FLAGS) $(QEMU_OUT) -s -S
 
 clean:
-	rm -rf $(OBJ_DIR)
+	make -C kernel clean
+	rm -rf proka-kernel.iso
+

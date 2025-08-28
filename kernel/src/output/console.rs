@@ -213,6 +213,10 @@ impl<'a> Console<'a> {
         self.hidden_cursor = true;
     }
 
+    pub fn cursor_visible(&mut self) {
+        self.hidden_cursor = false;
+    }
+
     /// 清空整个缓冲区
     pub fn clear(&mut self) {
         for row in self.buffer.iter_mut() {
