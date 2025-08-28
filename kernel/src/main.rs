@@ -20,10 +20,9 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-use log::info;
+use log::{debug, info};
 use proka_kernel::BASE_REVISION;
-use proka_kernel::graphics::Color;
-use proka_kernel::graphics::Pixel;
+use proka_kernel::drivers::init_devices;
 /* C functions extern area */
 extern_safe! {
     fn add(a: i32, b: i32) -> i32;
@@ -36,6 +35,8 @@ extern_safe! {
 pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
+
+    init_devices();
 
     proka_kernel::libs::logger::init_logger(); // 初始化日志系统
 

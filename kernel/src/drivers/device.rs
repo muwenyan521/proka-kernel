@@ -1,10 +1,11 @@
 extern crate alloc;
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering}; // For open count
 use lazy_static::lazy_static;
-use spin::Mutex;
+use spin::Mutex; // 新增：用于跟踪次设备号
 
 // 用于自动分配设备号的简单计数器（实际操作系统会更复杂）
 // static NEXT_MAJOR: AtomicUsize = AtomicUsize::new(1);
@@ -37,6 +38,8 @@ pub enum DeviceError {
     AlreadyOpen,
     NotOpen,
     AddressOutOfRange,
+    DeviceAlreadyRegistered, // 新增：设备已注册错误
+    DeviceNumberConflict,    // 新增：设备号冲突错误
 }
 
 /// 所有设备类型通用的操作
@@ -133,11 +136,24 @@ pub struct Device {
 
 impl Device {
     /// 构造一个新的设备。调用者提供其具体实现 (DeviceInner)。
+    /// 用户需要手动指定 major/minor 号。
     pub fn new(name: String, major: u16, minor: u16, inner: DeviceInner) -> Self {
         Self {
             name,
             major,
             minor,
+            inner,
+            open_count: AtomicUsize::new(0),
+        }
+    }
+
+    /// 构造一个新的设备，并让 `DeviceManager` 自动分配 major/minor 号。
+    /// 在添加到 `DeviceManager` 时，major/minor 号会被填充。
+    pub fn new_auto_assign(name: String, inner: DeviceInner) -> Self {
+        Self {
+            name,
+            major: 0, // 初始为0，表示待分配
+            minor: 0, // 初始为0，表示待分配
             inner,
             open_count: AtomicUsize::new(0),
         }
@@ -211,36 +227,86 @@ impl Device {
 
 pub struct DeviceManager {
     devices: Vec<Device>,
-    // 跟踪已分配的 major/minor 号，避免冲突
-    major_minor_map: Vec<(u16, u16)>,
+    // 为每个主设备号跟踪下一个可用的次设备号
+    // key: major, value: next_minor
+    next_minor_counters: BTreeMap<u16, u16>,
 }
 
 impl DeviceManager {
     pub fn new() -> Self {
         Self {
             devices: Vec::new(),
-            major_minor_map: Vec::new(),
+            next_minor_counters: BTreeMap::new(),
         }
     }
 
     /// 注册一个设备。将检查设备名称和 major/minor 号的唯一性。
-    pub fn register_device(&mut self, device: Device) -> Result<(), DeviceError> {
+    /// 如果设备的 major/minor 为 (0,0)，则会自动分配。
+    pub fn register_device(&mut self, mut device: Device) -> Result<(), DeviceError> {
         // 检查名称是否重复
         if self.devices.iter().any(|d| d.name == device.name) {
-            panic!("Device {} already exists", device.name);
+            return Err(DeviceError::DeviceAlreadyRegistered);
         }
 
-        // 检查 major/minor 是否重复
-        if self.major_minor_map.contains(&(device.major, device.minor)) {
-            panic!(
-                "Device with major:{} minor:{} already exists",
-                device.major, device.minor
-            );
+        // 如果 major/minor 是 (0,0)，则自动分配
+        if device.major == 0 && device.minor == 0 {
+            let (major, minor) = self.alloc_major_minor(device.device_type());
+            device.major = major;
+            device.minor = minor;
+        } else {
+            // 如果指定了 major/minor，检查是否冲突
+            if self
+                .devices
+                .iter()
+                .any(|d| d.major == device.major && d.minor == device.minor)
+            {
+                return Err(DeviceError::DeviceNumberConflict);
+            }
+            // 更新该 major 的 next_minor_counters
+            self.next_minor_counters
+                .entry(device.major)
+                .and_modify(|next_minor| {
+                    if device.minor >= *next_minor {
+                        *next_minor = device.minor + 1;
+                    }
+                })
+                .or_insert(device.minor + 1);
         }
 
-        self.major_minor_map.push((device.major, device.minor));
         self.devices.push(device);
         Ok(())
+    }
+
+    /// 自动分配一个新的 major/minor 设备号。
+    /// 这里的分配策略可以根据需要复杂化，例如重用已释放的次设备号等。
+    fn alloc_major_minor(&mut self, device_type: DeviceType) -> (u16, u16) {
+        // 设备类型分配一个主设备号范围
+        let major = match device_type {
+            DeviceType::Char => 1,
+            DeviceType::Block => 2,
+        };
+
+        let next_minor = self.next_minor_counters.entry(major).or_insert(0);
+        let minor = *next_minor;
+        *next_minor += 1; // 递增下一个可用的次设备号
+
+        // 确保分配的major/minor没有被占用
+        // 在 `register_device` 中会再次检查，这里主要用于生成新的号
+        // 循环查找确实未被占用的次设备号
+        let mut allocated_minor = minor;
+        loop {
+            let is_occupied = self
+                .devices
+                .iter()
+                .any(|d| d.major == major && d.minor == allocated_minor);
+            if !is_occupied {
+                break;
+            }
+            allocated_minor += 1;
+            *self.next_minor_counters.get_mut(&major).unwrap() = allocated_minor + 1;
+        }
+
+        (major, allocated_minor)
     }
 
     /// 根据设备名称获取设备。
@@ -266,11 +332,22 @@ impl DeviceManager {
     /// 注销设备。
     pub fn unregister_device(&mut self, name: &str) -> bool {
         if let Some(index) = self.devices.iter().position(|d| d.name == name) {
-            let removed_device = self.devices.remove(index);
-            self.major_minor_map
-                .retain(|&(maj, min)| maj != removed_device.major || min != removed_device.minor);
-            return true;
+            let _removed_device = self.devices.remove(index);
+            // 注意：这里没有将 major/minor 标记为可重用，
+            // 简单的实现是直接放弃这些号。更复杂的系统会维护一个空闲列表。
+            // 如果需要重用，需要在这里更新 next_minor_counters 或其他机制。
+            true
+        } else {
+            false
         }
-        false
     }
+}
+
+pub fn init_devices() {
+    DEVICE_MANAGER
+        .lock()
+        .register_device(super::char::serial::SerialDevice::create_device(
+            1, 0, 0x3f8,
+        ))
+        .unwrap();
 }

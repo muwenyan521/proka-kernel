@@ -46,6 +46,12 @@ impl RamFSDevice {
             DeviceInner::Block(ramfs),
         )
     }
+
+    /// 创建一个 RamFS 块设备实例，并让 `DeviceManager` 自动分配 major/minor 号。
+    pub fn create_device_auto_assign(id: u16, size_bytes: usize) -> Device {
+        let ramfs = Arc::new(RamFSDevice::new(id, size_bytes));
+        Device::new_auto_assign(ramfs.name().to_string(), DeviceInner::Block(ramfs))
+    }
 }
 
 impl SharedDeviceOps for RamFSDevice {

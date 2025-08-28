@@ -1,13 +1,18 @@
-use lazy_static::lazy_static;
-use spin::Mutex;
+extern crate alloc;
+use crate::drivers::DEVICE_MANAGER;
 use uart_16550::SerialPort;
 
-lazy_static! {
-    pub static ref SERIAL1: Mutex<SerialPort> = {
-        let mut serial_port = unsafe { SerialPort::new(0x3F8) };
-        serial_port.init();
-        Mutex::new(serial_port)
-    };
+pub fn serial_fallback(args: ::core::fmt::Arguments) {
+    use core::fmt::Write;
+    let mut serial_port = unsafe { SerialPort::new(0x3F8) };
+    serial_port.init();
+    // 输出错误信息
+    serial_port
+        .write_str("Could not initialize serial port device\n")
+        .expect("Printing to serial failed");
+    serial_port
+        .write_fmt(args)
+        .expect("Printing to serial failed");
 }
 
 /* The functions and macros in debug mode */
@@ -15,10 +20,30 @@ lazy_static! {
 #[cfg(debug_assertions)]
 pub fn _print(args: ::core::fmt::Arguments) {
     use core::fmt::Write;
-    SERIAL1
-        .lock()
-        .write_fmt(args)
-        .expect("Printing to serial failed");
+
+    // 获取设备管理器锁
+    let device_manager = DEVICE_MANAGER.lock();
+
+    // 尝试获取设备号为 (1, 0) 的字符设备
+    match device_manager.get_device_by_major_minor(1, 0) {
+        Some(device) => {
+            // 尝试将设备转换为字符设备
+            if let Some(char_device_arc) = device.as_char_device() {
+                let mut buffer = alloc::string::String::new();
+                buffer.write_fmt(args).expect("Failed to format string");
+
+                char_device_arc
+                    .write(buffer.as_bytes())
+                    .expect("Printing to serial failed");
+            } else {
+                serial_fallback(args);
+            }
+        }
+        None => {
+            // 设备 (1,0) 未找到
+            serial_fallback(args);
+        }
+    }
 }
 
 /// Prints to the host through the serial interface.
