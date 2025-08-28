@@ -36,17 +36,15 @@ pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
+    init_devices();
+
     proka_kernel::libs::logger::init_logger(); // Init log system
-    
+
     proka_kernel::output::console::CONSOLE
         .lock()
         .cursor_hidden();
 
     println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION")); // Print welcome message
-
-    proka_kernel::output::console::CONSOLE
-        .lock()
-        .cursor_visible();
 
     // 初始化各个模块
     proka_kernel::interrupts::gdt::init();
@@ -55,8 +53,6 @@ pub extern "C" fn kernel_main() -> ! {
     info!("IDT initialized");
     proka_kernel::interrupts::apic::init();
     info!("APIC initialized");
-    init_devices();
-    info!("Devices initialized");
 
     proka_kernel::memory::paging::table::init_page_table();
 
