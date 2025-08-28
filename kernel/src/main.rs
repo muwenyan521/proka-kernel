@@ -37,10 +37,10 @@ pub extern "C" fn kernel_main() -> ! {
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
     proka_kernel::libs::logger::init_logger(); // 初始化日志系统
-
+    /* 
     proka_kernel::output::console::CONSOLE
         .lock()
-        .cursor_hidden();
+        .cursor_hidden();*/
 
     println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION")); // 输出欢迎信息
 
@@ -52,6 +52,8 @@ pub extern "C" fn kernel_main() -> ! {
     info!("APIC initialized");
 
     success!("Kernel ready!");
+
+    // proka_kernel::output::console::CONSOLE.lock().cursor_shown();
 
     let vfs = proka_kernel::fs::vfs::Vfs::new();
     vfs.mount(None, "/", "memfs", None).unwrap();

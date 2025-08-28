@@ -124,6 +124,8 @@ pub struct Console<'a> {
 
     hidden_cursor: bool,
     ansi_parse_state: AnsiParseState, // 新增：ANSI 解析状态
+    prev_cursor_x: u32,               // 新增：记录前一次光标位置
+    prev_cursor_y: u32,               // 新增：记录前一次光标位置
 }
 
 impl<'a> Console<'a> {
@@ -184,6 +186,8 @@ impl<'a> Console<'a> {
             cursor_needs_redraw: true, // 初始时光标需要绘制
             hidden_cursor: false,
             ansi_parse_state: AnsiParseState::Normal, // 初始化 ANSI 解析状态
+            prev_cursor_x: 0,
+            prev_cursor_y: 0,
         }
     }
 
@@ -377,29 +381,47 @@ impl<'a> Console<'a> {
 
     /// 绘制当前光标到屏幕
     pub fn draw_cursor(&mut self) {
-        // 仅在光标需要重绘时才执行
-        if !self.cursor_needs_redraw {
+        if !self.cursor_needs_redraw || self.hidden_cursor {
             return;
         }
-        if self.hidden_cursor {
-            return;
+        // 1. 清除旧光标：重绘之前光标位置的字符
+        if self.prev_cursor_y < self.height_chars {
+            let prev_x = self.prev_cursor_x;
+            let prev_y = self.prev_cursor_y;
+
+            if let Some(row) = self
+                .buffer
+                .get((prev_y + self.scroll_offset_y as u32) as usize)
+            {
+                if let Some(Some(char_info)) = row.get(prev_x as usize) {
+                    self.draw_char_to_screen_at_px(
+                        char_info.ch,
+                        prev_x * self.font_width,
+                        prev_y * self.font_height,
+                        char_info.fg,
+                        char_info.bg,
+                    );
+                }
+            }
         }
+        // 2. 绘制新光标（仅在可见位置绘制）
+        if self.cursor_y < self.height_chars {
+            let cursor_x_px = self.cursor_x * self.font_width;
+            let cursor_y_px = self.cursor_y * self.font_height;
 
-        // 重新绘制光标位置的字符，以清除旧光标 (如果需要)
-        // 实际上，光标区域的字符会在 draw_buffer_to_screen 中被重绘
-        // 所以这里直接绘制新光标即可，无需手动清除旧光标
-        let cursor_screen_x_px = self.cursor_x * self.font_width;
-        let cursor_screen_y_px = self.cursor_y * self.font_height;
-
-        // 绘制新光标 (反色矩形或其他表示)
-        // 这里可以使用反色或一个闪烁的方块来表示光标
-        self.renderer.fill_rect(
-            Pixel::new(cursor_screen_x_px as u64, cursor_screen_y_px as u64),
-            self.font_width as u64,
-            self.font_height as u64,
-            color::WHITE, // 光标颜色
-        );
-        self.cursor_needs_redraw = false; // 光标已绘制，清除标记
+            // 使用反色效果使光标可见
+            let inverse_color = self.current_bg_color.invert();
+            self.renderer.fill_rect(
+                Pixel::new(cursor_x_px as u64, cursor_y_px as u64),
+                self.font_width as u64,
+                self.font_height as u64,
+                inverse_color,
+            );
+        }
+        // 3. 更新记录
+        self.prev_cursor_x = self.cursor_x;
+        self.prev_cursor_y = self.cursor_y;
+        self.cursor_needs_redraw = false;
     }
 
     /// 绘制缓冲区中变脏的部分到屏幕
@@ -480,8 +502,6 @@ impl<'a> Console<'a> {
 
     /// 写入一个字符串到控制台
     pub fn write_string(&mut self, string: &str) {
-        let old_cursor_x = self.cursor_x;
-        let old_cursor_y = self.cursor_y;
         let mut changed = false; // 标记是否有实际内容写入或光标移动
 
         for c in string.chars() {
@@ -581,8 +601,13 @@ impl<'a> Console<'a> {
                 }
             }
         }
+        if self.cursor_x != self.prev_cursor_x || self.cursor_y != self.prev_cursor_y {
+            // 如果光标移动了，将旧的光标位置标记为脏区域，以确保它被重绘（从而清除光标块）
+            self.add_dirty_region(Rect::new(self.prev_cursor_x, self.prev_cursor_y, 1, 1));
+            changed = true; // 确保即使只移动光标也触发重绘
+        }
 
-        // 标记光标需要重绘，因为其位置可能已经改变，且背景色可能因为字符写入而改变
+        // 标记新的光标位置需要重绘
         self.cursor_needs_redraw = true;
 
         // 如果光标位置发生变化 (表示内容已经写入)，则触发一次渲染

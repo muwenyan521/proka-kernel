@@ -63,6 +63,9 @@ impl Color {
         let a = alpha;
         Self { r, g, b, a }
     }
+    pub fn invert(&self) -> Color {
+        Color::new(255 - self.r, 255 - self.g, 255 - self.b)
+    }
 }
 
 #[macro_export]
