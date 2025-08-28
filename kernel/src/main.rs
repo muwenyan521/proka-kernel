@@ -20,7 +20,7 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-use log::info;
+use log::{info, warn};
 use proka_kernel::BASE_REVISION;
 
 /* C functions extern area */
@@ -38,7 +38,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     proka_kernel::libs::logger::init_logger();
 
-    info!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION"));
+    println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION"));
     println!("• Hello, World!");
 
     proka_kernel::output::console::CONSOLE
@@ -52,8 +52,13 @@ pub extern "C" fn kernel_main() -> ! {
 
     proka_kernel::interrupts::apic::init();
     println!("• APIC initialized");
-    println!("\x1b[31mThis text is red.\x1b[0m");
     println!("• Kernel ready");
+
+    info!("INFO");
+    warn!("WARN");
+    log::debug!("DEBUG");
+    log::trace!("TRACE");
+    log::error!("ERROR");
 
     let vfs = proka_kernel::fs::vfs::Vfs::new();
     vfs.mount(None, "/", "memfs", None).unwrap();

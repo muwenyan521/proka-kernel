@@ -18,8 +18,26 @@ impl Log for KernelLogger {
             } else {
                 ""
             };
+            let color;
+            match record.level() {
+                log::Level::Error => {
+                    color = "\x1b[31m";
+                }
+                log::Level::Warn => {
+                    color = "\x1b[33m";
+                }
+                log::Level::Info => {
+                    color = "\x1b[32m";
+                }
+                log::Level::Debug => {
+                    color = "\x1b[34m";
+                }
+                log::Level::Trace => {
+                    color = "\x1b[35m";
+                }
+            }
 
-            let _ = dual_println!("[{}] {}: {}\n", level, target, record.args());
+            let _ = dual_println!("{}[{}] {}: {}\x1b[0m", color, level, target, record.args());
         }
     }
 
