@@ -56,7 +56,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     proka_kernel::memory::paging::table::init_page_table();
 
-    success!("• Kernel ready");
+    success!("Kernel ready!");
 
     let vfs = proka_kernel::fs::vfs::Vfs::new();
     vfs.mount(None, "/", "memfs", None).unwrap();

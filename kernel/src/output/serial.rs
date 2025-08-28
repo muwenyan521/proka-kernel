@@ -8,7 +8,7 @@ pub fn serial_fallback(args: ::core::fmt::Arguments) {
     serial_port.init();
     // 输出错误信息
     serial_port
-        .write_str("Could not initialize serial port device\n")
+        .write_str("WARNING: Could not initialize serial port device\n")
         .expect("Printing to serial failed");
     serial_port
         .write_fmt(args)

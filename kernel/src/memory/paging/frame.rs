@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::MEMORY_MAP_REQUEST;
+use crate::{MEMORY_MAP_REQUEST, serial_println};
 use alloc::vec::Vec;
 use bitmap_allocator::{BitAlloc, BitAlloc16M};
 use lazy_static::lazy_static;
@@ -22,6 +22,7 @@ fn addr_to_phys_frame(addr: Option<usize>) -> Option<PhysFrame> {
 
 lazy_static! {
     pub static ref GLOBAL_FRAME_ALLOCATOR: Mutex<PhysFrameAlloc> = {
+        serial_println!("6");
         let mut frame_allocator = PhysFrameAlloc::new();
         let memory_map = MEMORY_MAP_REQUEST.get_response().expect("Failed to get memory map");
 

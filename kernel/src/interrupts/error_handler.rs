@@ -39,6 +39,7 @@ exception_handler!(overflow_handler, "OVERFLOW");
 exception_handler!(bound_range_handler, "BOUND RANGE EXCEEDED");
 exception_handler!(invalid_opcode_handler, "INVALID OPCODE");
 exception_handler!(device_not_available_handler, "DEVICE NOT AVAILABLE");
+exception_handler!(x87_floating_point_handler, "x87 FLOATING POINT ERROR");
 
 // 有错误码异常 -------------------------------------------------
 exception_handler_with_error_code!(invalid_tss_handler, "INVALID TSS");
@@ -46,6 +47,7 @@ exception_handler_with_error_code!(segment_not_present_handler, "SEGMENT NOT PRE
 exception_handler_with_error_code!(stack_segment_handler, "STACK-SEGMENT FAULT");
 exception_handler_with_error_code!(general_protection_handler, "GENERAL PROTECTION FAULT");
 exception_handler_with_error_code!(alignment_check_handler, "ALIGNMENT CHECK");
+exception_handler_with_error_code!(control_protection_handler, "CONTROL PROTECTION EXCEPTION");
 
 // 特殊处理异常 -------------------------------------------------
 pub extern "x86-interrupt" fn double_fault_handler(
@@ -84,6 +86,11 @@ pub extern "x86-interrupt" fn pagefault_handler(
 
 pub extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     serial_println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+}
+
+pub extern "x86-interrupt" fn machine_check_handler(stack_frame: InterruptStackFrame) -> ! {
+    serial_println!("CRITICAL: MACHINE CHECK\n{:#?}", stack_frame);
+    panic!("SYSTEM HALT: MACHINE CHECK");
 }
 
 #[inline(always)]
