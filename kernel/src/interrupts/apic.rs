@@ -1,5 +1,5 @@
 use crate::libs::msr;
-use crate::println;
+use log::{debug, error};
 use raw_cpuid::CpuId;
 use x86_64::registers::model_specific::Msr;
 
@@ -29,12 +29,12 @@ pub fn enable_x2apic() {
 pub fn init() {
     if apic_is_available() {
         if x2apic_is_available() {
-            println!("x2APIC is available")
+            debug!("x2APIC is available")
         } else {
-            println!("APIC is available");
+            debug!("APIC is available");
         }
     } else {
-        println!("ERROR: Don't support PIC mode!");
+        error!("Don't support PIC mode!");
         panic!("ERROR: Don't support PIC mode!");
     }
 }

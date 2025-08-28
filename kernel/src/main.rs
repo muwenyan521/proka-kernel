@@ -22,7 +22,8 @@ extern crate proka_kernel;
 extern crate alloc;
 use log::info;
 use proka_kernel::BASE_REVISION;
-
+use proka_kernel::graphics::Color;
+use proka_kernel::graphics::Pixel;
 /* C functions extern area */
 extern_safe! {
     fn add(a: i32, b: i32) -> i32;
@@ -37,13 +38,15 @@ pub extern "C" fn kernel_main() -> ! {
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
     proka_kernel::libs::logger::init_logger(); // 初始化日志系统
-    /* 
+
+    // 隐藏光标
     proka_kernel::output::console::CONSOLE
         .lock()
-        .cursor_hidden();*/
+        .cursor_hidden();
 
     println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION")); // 输出欢迎信息
 
+    // 初始化各个模块
     proka_kernel::interrupts::gdt::init();
     info!("GDT Initialized");
     proka_kernel::interrupts::idt::init_idt();
@@ -52,8 +55,6 @@ pub extern "C" fn kernel_main() -> ! {
     info!("APIC initialized");
 
     success!("Kernel ready!");
-
-    // proka_kernel::output::console::CONSOLE.lock().cursor_shown();
 
     let vfs = proka_kernel::fs::vfs::Vfs::new();
     vfs.mount(None, "/", "memfs", None).unwrap();

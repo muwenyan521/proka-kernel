@@ -38,7 +38,6 @@ pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 #[unsafe(link_section = ".requests")]
 #[used]
-/// The framebuffer request of the kernel.
 pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 /// This will extern the C function and make it to safe.

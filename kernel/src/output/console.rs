@@ -1,17 +1,18 @@
 extern crate alloc;
+use crate::color;
 use crate::{
-    FRAMEBUFFER_REQUEST, // serial_println, // 如果不需要，可以移除
+    FRAMEBUFFER_REQUEST,
     graphics::{
         Pixel, Renderer,
         color::{self, Color},
     },
 };
-use ab_glyph::{Font, FontRef, PxScale, ScaleFont}; // 引入 ScaleFont trait
-use alloc::{string::String, vec, vec::Vec}; // 引入 String 用于 ANSI 解析
+use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
+use alloc::{string::String, vec, vec::Vec};
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
-use libm::*;
-use spin::Mutex; // round, ceilf 等函数
+use libm::ceilf;
+use spin::Mutex;
 
 pub const DEFAULT_FONT_SIZE: f32 = 12.0;
 pub const TAB_SPACES: usize = 4;
@@ -97,40 +98,38 @@ enum AnsiParseState {
 }
 
 pub struct Console<'a> {
-    pub renderer: Renderer<'a>,
-    font: FontRef<'static>,
-    scale: PxScale,
+    pub renderer: Renderer<'a>, // 渲染器
+    font: FontRef<'static>,     // 字体
+    scale: PxScale,             // 字体缩放比例
 
-    buffer: Vec<Vec<Option<ConsoleChar>>>, // 存储所有字符的缓冲区
-    scroll_offset_y: usize,                // 垂直滚动偏移量，表示缓冲区顶部有多少行是不可见的
+    buffer: Vec<Vec<Option<ConsoleChar>>>, // 字符缓冲区
+    scroll_offset_y: usize,                // 垂直滚动偏移量
 
-    width_chars: u32,
-    height_chars: u32,
+    width_chars: u32,  // 宽度（字符数）
+    height_chars: u32, // 高度（字符数）
 
-    cursor_x: u32,
-    cursor_y: u32,
-    current_color: Color,
-    current_bg_color: Color,
-    default_fg_color: Color, // 新增：存储默认前景颜色
-    default_bg_color: Color, // 新增：存储默认背景颜色
+    cursor_x: u32,           // 光标x位置（字符坐标）
+    cursor_y: u32,           // 光标y位置（字符坐标）
+    prev_cursor_x: u32,      // 上次光标x位置
+    prev_cursor_y: u32,      // 上次光标y位置
+    current_color: Color,    // 当前颜色
+    current_bg_color: Color, // 当前背景颜色
+    default_color: Color,    // 默认颜色
+    default_bg_color: Color, // 默认背景颜色
 
-    font_width: u32,
-    font_height: u32,
-    //font_line_height: f32, // Line height in font pixels (f32)
-    font_baseline: f32, // Baseline offset in font pixels (f32)
+    font_width: u32,    // 字体宽度（像素）
+    font_height: u32,   // 字体高度（像素）
+    font_baseline: f32, // 基线位置
 
     dirty_regions: Vec<Rect>,  // 存储需要重绘的矩形区域 (字符坐标)
     cursor_needs_redraw: bool, // 标记光标是否需要重绘
 
-    hidden_cursor: bool,
-    ansi_parse_state: AnsiParseState, // 新增：ANSI 解析状态
-    prev_cursor_x: u32,               // 新增：记录前一次光标位置
-    prev_cursor_y: u32,               // 新增：记录前一次光标位置
+    hidden_cursor: bool,              //  是否隐藏光标
+    ansi_parse_state: AnsiParseState, // ANSI 解析状态
 }
 
 impl<'a> Console<'a> {
     pub fn new(renderer: Renderer<'a>, font: FontRef<'static>) -> Self {
-        // 使用as_scaled()直接获取ScaledFont，避免重复创建
         let scale = font
             .pt_to_px_scale(DEFAULT_FONT_SIZE)
             .unwrap_or(PxScale::from(16.0));
@@ -143,20 +142,19 @@ impl<'a> Console<'a> {
         let font_line_height = ascent - descent + line_gap;
         let font_baseline = ascent;
 
-        // 获取'M'的字形边界来计算字符宽度，这通常是一个比较好的近似值
-        // 直接使用bound.width()和bound.height()会更精确
+        // 获取'M'的字形边界来计算字符宽度
         let g_id = font.glyph_id('M');
         let g = g_id.with_scale(scale);
         let bound = font.glyph_bounds(&g);
-        // 使用ceilf确保可以容纳字符，并直接转换为u32
+
         let font_width = ceilf(bound.width()) as u32;
         let font_height = ceilf(font_line_height) as u32;
 
-        let width_chars = renderer.width().checked_div(font_width as u64).unwrap_or(1) as u32;
+        let width_chars = renderer.width().checked_div(font_width as u64).unwrap_or(1) as u32; // 计算宽度（字符数）
         let height_chars = renderer
             .height()
             .checked_div(font_height as u64)
-            .unwrap_or(1) as u32;
+            .unwrap_or(1) as u32; // 计算高度（字符数）
 
         let default_fg = color::WHITE;
         let default_bg = color::BLACK;
@@ -176,11 +174,10 @@ impl<'a> Console<'a> {
             height_chars,
             current_color: default_fg,
             current_bg_color: default_bg,
-            default_fg_color: default_fg, // 初始化默认颜色
+            default_color: default_fg,    // 初始化默认颜色
             default_bg_color: default_bg, // 初始化默认颜色
-            font_width,                   // 已是u32
-            font_height,                  // 已是u32
-            //font_line_height,
+            font_width,
+            font_height,
             font_baseline,
             dirty_regions: Vec::new(),
             cursor_needs_redraw: true, // 初始时光标需要绘制
@@ -191,11 +188,12 @@ impl<'a> Console<'a> {
         }
     }
 
+    /// 获取渲染器可变引用
     pub fn get_renderer(&mut self) -> &mut Renderer<'a> {
         &mut self.renderer
     }
 
-    /// 添加一个脏区域，会尝试合并相邻或重叠的区域
+    /// 添加一个脏区域
     fn add_dirty_region(&mut self, region: Rect) {
         let mut merged = false;
         for i in 0..self.dirty_regions.len() {
@@ -210,6 +208,7 @@ impl<'a> Console<'a> {
         }
     }
 
+    /// 隐藏光标
     pub fn cursor_hidden(&mut self) {
         self.hidden_cursor = true;
     }
@@ -232,7 +231,6 @@ impl<'a> Console<'a> {
     }
 
     /// 清空渲染器上的所有像素，以背景色填充
-    /// 此函数现在只在完全重绘屏幕时使用，例如滚动或改变背景色
     #[allow(dead_code)]
     fn clear_screen_pixels(&mut self) {
         let raw_clear_color = self.renderer.get_clear_color(); // 保存原始清除色
@@ -270,7 +268,6 @@ impl<'a> Console<'a> {
         }
 
         // 如果光标在屏幕上超出了可见高度，则进行滚动
-        // 注意：这里需要考虑屏幕可见高度和实际的缓冲区高度
         if self.cursor_y >= self.height_chars {
             let lines_to_scroll = self.cursor_y - self.height_chars + 1;
             let old_scroll_offset_y = self.scroll_offset_y;
@@ -324,7 +321,7 @@ impl<'a> Console<'a> {
     }
 
     /// 渲染一个字符到屏幕的指定位置
-    #[inline(always)] // 尝试内联这个函数以减少函数调用开销
+    #[inline(always)]
     fn draw_char_to_screen_at_px(
         &mut self,
         ch: char,
@@ -358,8 +355,6 @@ impl<'a> Console<'a> {
                 }
 
                 // 结合偏移量计算屏幕像素坐标
-                // roundf 足够，或者直接转u32会截断，需要根据需求选择
-                // 使用 (val + 0.5) as u32 进行四舍五入到最近整数可以替代 round()
                 let screen_x = ((x as f32 + x_offset) + 0.5) as u32;
                 let screen_y = ((y as f32 + y_offset) + 0.5) as u32;
 
@@ -427,9 +422,8 @@ impl<'a> Console<'a> {
     /// 绘制缓冲区中变脏的部分到屏幕
     pub fn draw_buffer_to_screen(&mut self) {
         // 如果没有脏区域且光标不需要重绘，则无需进行任何渲染操作
-        // 但为了光标闪烁等动态效果，即使没有脏区也可能需要刷新屏幕
         if self.dirty_regions.is_empty() && !self.cursor_needs_redraw {
-            self.renderer.present();
+            // self.renderer.present();
             return;
         }
 
@@ -633,26 +627,24 @@ impl<'a> Console<'a> {
             35 | 45 => Some(color::MAGENTA),
             36 | 46 => Some(color::CYAN),
             37 | 47 => Some(color::WHITE),
-            // 90-97 (bright foreground) and 100-107 (bright background) could be mapped to
-            // a brighter palette if your Color type supports it. For now, we'll map them
-            // to their non-bright counterparts or slightly modified versions.
-            90 => Some(Color::new(128, 128, 128)), // Bright Black (Dark Gray)
-            91 => Some(Color::new(255, 100, 100)), // Bright Red
-            92 => Some(Color::new(100, 255, 100)), // Bright Green
-            93 => Some(Color::new(255, 255, 100)), // Bright Yellow
-            94 => Some(Color::new(100, 100, 255)), // Bright Blue
-            95 => Some(Color::new(255, 100, 255)), // Bright Magenta
-            96 => Some(Color::new(100, 255, 255)), // Bright Cyan
-            97 => Some(Color::new(255, 255, 255)), // Bright White
 
-            100 => Some(Color::new(64, 64, 64)), // Bright Black Background
-            101 => Some(Color::new(150, 0, 0)),  // Bright Red Background
-            102 => Some(Color::new(0, 150, 0)),  // Bright Green Background
-            103 => Some(Color::new(150, 150, 0)), // Bright Yellow Background
-            104 => Some(Color::new(0, 0, 150)),  // Bright Blue Background
-            105 => Some(Color::new(150, 0, 150)), // Bright Magenta Background
-            106 => Some(Color::new(0, 150, 150)), // Bright Cyan Background
-            107 => Some(Color::new(150, 150, 150)), // Bright White Background
+            90 => Some(color!(128, 128, 128)), // Bright Black (Dark Gray)
+            91 => Some(color!(255, 100, 100)), // Bright Red
+            92 => Some(color!(100, 255, 100)), // Bright Green
+            93 => Some(color!(255, 255, 100)), // Bright Yellow
+            94 => Some(color!(100, 100, 255)), // Bright Blue
+            95 => Some(color!(255, 100, 255)), // Bright Magenta
+            96 => Some(color!(100, 255, 255)), // Bright Cyan
+            97 => Some(color!(255, 255, 255)), // Bright White
+
+            100 => Some(color!(64, 64, 64)), // Bright Black Background
+            101 => Some(color!(150, 0, 0)),  // Bright Red Background
+            102 => Some(color!(0, 150, 0)),  // Bright Green Background
+            103 => Some(color!(150, 150, 0)), // Bright Yellow Background
+            104 => Some(color!(0, 0, 150)),  // Bright Blue Background
+            105 => Some(color!(150, 0, 150)), // Bright Magenta Background
+            106 => Some(color!(0, 150, 150)), // Bright Cyan Background
+            107 => Some(color!(150, 150, 150)), // Bright White Background
             _ => None,
         }
     }
@@ -661,7 +653,7 @@ impl<'a> Console<'a> {
     fn apply_ansi_codes(&mut self, codes: &[u32]) {
         if codes.is_empty() {
             // ESC[m 或 ESC[0m 默认重置所有属性
-            self.set_fg_color(self.default_fg_color);
+            self.set_fg_color(self.default_color);
             self.set_bg_color(self.default_bg_color);
             return;
         }
@@ -670,15 +662,9 @@ impl<'a> Console<'a> {
             match code {
                 0 => {
                     // Reset all attributes
-                    self.set_fg_color(self.default_fg_color);
+                    self.set_fg_color(self.default_color);
                     self.set_bg_color(self.default_bg_color);
                 }
-                // 1 => Bold/Bright (Often just changes foreground to bright version)
-                // For simplicity, we'll ignore bold for now as it requires font changes.
-                // Or you could map 3x to 9x if 1 is present.
-                // e.g., if previous code was 31 and current is 1, change to 91.
-
-                // Foreground colors (30-37)
                 30..=37 => {
                     if let Some(color) = Self::ansi_code_to_color(code) {
                         self.set_fg_color(color);
@@ -686,7 +672,7 @@ impl<'a> Console<'a> {
                 }
                 39 => {
                     // Default foreground color
-                    self.set_fg_color(self.default_fg_color);
+                    self.set_fg_color(self.default_color);
                 }
 
                 // Background colors (40-47)
@@ -719,7 +705,7 @@ impl<'a> Console<'a> {
         }
     }
 
-    // 设置前景颜色
+    /// 设置前景颜色
     pub fn set_fg_color(&mut self, color: Color) {
         if self.current_color != color {
             self.current_color = color;
@@ -728,7 +714,7 @@ impl<'a> Console<'a> {
         }
     }
 
-    // 设置背景颜色
+    /// 设置背景颜色
     pub fn set_bg_color(&mut self, color: Color) {
         if self.current_bg_color != color {
             self.current_bg_color = color;
@@ -737,8 +723,6 @@ impl<'a> Console<'a> {
             self.dirty_regions.clear();
             self.add_dirty_region(Rect::new(0, 0, self.width_chars, self.height_chars));
             self.cursor_needs_redraw = true;
-            // `draw_buffer_to_screen` 会在 `write_string` 结束后统一调用
-            // 这里不立即调用，避免过多刷新
         }
     }
 }

@@ -24,10 +24,10 @@ macro_rules! pixel {
 }
 
 pub struct Renderer<'a> {
-    framebuffer: Framebuffer<'a>, // 这是前台缓冲区，最终显示的内容
-    back_buffer: Vec<u8>,         // 这是后台缓冲区，所有的绘制操作都在这里进行
-    pixel_size: usize,
-    clear_color: color::Color,
+    framebuffer: Framebuffer<'a>, // 前台缓冲区
+    back_buffer: Vec<u8>,         // 后台缓冲区
+    pixel_size: usize,            // 每个像素占用的字节数
+    clear_color: color::Color,    // 默认清屏颜色
 }
 
 impl<'a> Renderer<'a> {
@@ -37,6 +37,7 @@ impl<'a> Renderer<'a> {
         let bpp = framebuffer.bpp() as usize; // bits per pixel
         let pixel_size = bpp / 8; // bytes per pixel
         let buffer_size = width * height * pixel_size; // 后台缓冲区总字节数
+
         // 初始化后台缓冲区，填充为0（黑色）
         let back_buffer = vec![0; buffer_size];
         Self {
@@ -47,6 +48,7 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// 获取后台缓冲区偏移
     #[inline(always)]
     fn get_buffer_offset(&self, x: u64, y: u64) -> usize {
         // 后台缓冲区的布局是线性的，不一定与framebuffer的pitch相同
@@ -54,6 +56,7 @@ impl<'a> Renderer<'a> {
             + x as usize * self.pixel_size
     }
 
+    /// 转换颜色为帧缓冲区格式
     #[inline(always)]
     fn mask_color(&self, color: &color::Color) -> u32 {
         if self.framebuffer.bpp() == 32 {
@@ -68,7 +71,7 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    // 绘制像素到后台缓冲区
+    /// 绘制像素到后台缓冲区
     #[inline(always)]
     fn set_pixel_raw(&mut self, x: u64, y: u64, color: &color::Color) {
         // 边界检查：确保像素在屏幕范围内
@@ -79,19 +82,21 @@ impl<'a> Renderer<'a> {
             } else if color.a > 0 {
                 // 读取后台缓冲区当前像素颜色进行alpha混合
                 let current_color = self.get_pixel_raw(x, y);
+
                 // 执行alpha混合: result = (source * alpha + destination * (255 - alpha)) / 255
                 let alpha = color.a as u32;
                 let inv_alpha = 255 - alpha;
                 let r = (color.r as u32 * alpha + current_color.r as u32 * inv_alpha) / 255;
                 let g = (color.g as u32 * alpha + current_color.g as u32 * inv_alpha) / 255;
                 let b = (color.b as u32 * alpha + current_color.b as u32 * inv_alpha) / 255;
+
                 let mixed_color = color::Color::with_alpha(r as u8, g as u8, b as u8, 255);
                 self.mask_color(&mixed_color)
             } else {
-                // 透明,不绘制
+                // 纯透明,不绘制
                 return;
             };
-            // 注意：这里需要确保写入后台缓冲区的字节数与bpp匹配
+
             let pixel_bytes = color_u32.to_le_bytes(); // 转换为字节数组
             let bytes_to_write = &pixel_bytes[..self.pixel_size]; // 取BPP对应的字节数
             for i in 0..self.pixel_size {
@@ -100,17 +105,20 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// 设置像素
     #[inline(always)]
     pub fn set_pixel(&mut self, pixel: Pixel, color: &color::Color) {
         let (x, y) = pixel.to_coord();
         self.set_pixel_raw(x, y, color);
     }
 
+    /// 获取像素
     pub fn get_pixel(&self, pixel: Pixel) -> color::Color {
         let (x, y) = pixel.to_coord();
         self.get_pixel_raw(x, y) // 从前台缓冲区获取
     }
 
+    /// 获取像素
     fn get_pixel_raw(&self, x: u64, y: u64) -> color::Color {
         let offset = self.get_buffer_offset(x, y);
         let mut pixel_data_u32 = 0u32;
@@ -147,6 +155,7 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// 绘制线
     pub fn draw_line(&mut self, p1: Pixel, p2: Pixel, color: color::Color) {
         let dx_abs = ((p2.x as i64 - p1.x as i64).abs()) as u64;
         let dy_abs = ((p2.y as i64 - p1.y as i64).abs()) as u64;
@@ -187,12 +196,14 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// 绘制三角形
     pub fn draw_triangle(&mut self, p1: Pixel, p2: Pixel, p3: Pixel, color: color::Color) {
         self.draw_line(p1, p2, color);
         self.draw_line(p2, p3, color);
         self.draw_line(p3, p1, color);
     }
 
+    /// 填充三角形
     pub fn fill_triangle(&mut self, p1: Pixel, p2: Pixel, p3: Pixel, color: color::Color) {
         let (x1, y1) = p1.to_coord();
         let (x2, y2) = p2.to_coord();
@@ -296,6 +307,7 @@ impl<'a> Renderer<'a> {
         self.framebuffer.height()
     }
 
+    /// 绘制矩形
     pub fn draw_rect(&mut self, pixel: Pixel, width: u64, height: u64, color: color::Color) -> () {
         let (x, y) = pixel.to_coord();
         let x2 = x + width;
@@ -307,6 +319,7 @@ impl<'a> Renderer<'a> {
         self.draw_line(pixel!(x, y2), pixel!(x, y), color);
     }
 
+    /// 填充矩形
     pub fn fill_rect(&mut self, pixel: Pixel, width: u64, height: u64, color: color::Color) {
         let (x_min, y_min) = pixel.to_coord();
         let x_max = x_min + width;
@@ -462,6 +475,7 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// 绘制BMP图像
     pub fn draw_bmp(&mut self, pos: Pixel, bmp: &BmpImage) {
         let (x_start, y_start) = (pos.x, pos.y);
 
@@ -519,6 +533,38 @@ impl<'a> Renderer<'a> {
         let bmp = BmpImage::from_bytes(data)?;
         self.draw_bmp(pos, &bmp);
         Ok(())
+    }
+
+    /// 绘制圆形
+    pub fn draw_circle(&mut self, center: Pixel, radius: u64, color: color::Color) {
+        if radius == 0 {
+            return;
+        }
+
+        let (cx, cy) = center.to_coord();
+        let mut x = 0i64;
+        let mut y = radius as i64;
+        let mut d = 3 - 2 * radius as i64;
+
+        while x <= y {
+            // 绘制8个对称点
+            self.set_pixel_raw((cx as i64 + x) as u64, (cy as i64 + y) as u64, &color);
+            self.set_pixel_raw((cx as i64 + x) as u64, (cy as i64 - y) as u64, &color);
+            self.set_pixel_raw((cx as i64 - x) as u64, (cy as i64 + y) as u64, &color);
+            self.set_pixel_raw((cx as i64 - x) as u64, (cy as i64 - y) as u64, &color);
+            self.set_pixel_raw((cx as i64 + y) as u64, (cy as i64 + x) as u64, &color);
+            self.set_pixel_raw((cx as i64 + y) as u64, (cy as i64 - x) as u64, &color);
+            self.set_pixel_raw((cx as i64 - y) as u64, (cy as i64 + x) as u64, &color);
+            self.set_pixel_raw((cx as i64 - y) as u64, (cy as i64 - x) as u64, &color);
+
+            if d < 0 {
+                d = d + 4 * x + 6;
+            } else {
+                d = d + 4 * (x - y) + 10;
+                y -= 1;
+            }
+            x += 1;
+        }
     }
 
     /// 将后台缓冲区的内容复制到前台帧缓冲区，从而显示绘制结果。

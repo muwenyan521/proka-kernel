@@ -17,7 +17,7 @@ lazy_static! {
         idt.invalid_opcode.set_handler_fn(error_handler::invalid_opcode_handler);
         idt.device_not_available.set_handler_fn(error_handler::device_not_available_handler);
 
-        // 有错误码异常设置 (set_handler_fn 自动识别签名)
+        // 有错误码异常设置
         idt.invalid_tss.set_handler_fn(error_handler::invalid_tss_handler);
         idt.segment_not_present.set_handler_fn(error_handler::segment_not_present_handler);
         idt.stack_segment_fault.set_handler_fn(error_handler::stack_segment_handler);
@@ -39,5 +39,4 @@ lazy_static! {
 
 pub fn init_idt() {
     IDT.load();
-    crate::serial_println!("Interrupt Descriptor Table loaded");
 }

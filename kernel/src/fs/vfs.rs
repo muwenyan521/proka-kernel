@@ -51,10 +51,10 @@ pub struct Metadata {
 }
 
 pub trait File: Send + Sync {
-    fn read(&self, buf: &mut [u8]) -> Result<usize, VfsError>;
-    fn write(&mut self, buf: &[u8]) -> Result<usize, VfsError>;
-    fn seek(&self, pos: u64) -> Result<u64, VfsError>;
-    fn stat(&self) -> Result<Metadata, VfsError>;
+    fn read(&self, buf: &mut [u8]) -> Result<usize, VfsError>; // 读取文件
+    fn write(&mut self, buf: &[u8]) -> Result<usize, VfsError>; // 写入文件
+    fn seek(&self, pos: u64) -> Result<u64, VfsError>; // 移动文件指针
+    fn stat(&self) -> Result<Metadata, VfsError>; // 获取文件元数据
 }
 
 pub trait FileSystem: Send + Sync {
@@ -62,16 +62,16 @@ pub trait FileSystem: Send + Sync {
         &self,
         device: Option<&Device>,
         args: Option<&[&str]>,
-    ) -> Result<Arc<dyn VNode>, VfsError>;
-    fn fs_type(&self) -> &'static str;
+    ) -> Result<Arc<dyn VNode>, VfsError>; // 创建VNode
+    fn fs_type(&self) -> &'static str; // 文件系统类型字符串
 }
 
 pub trait VNode: Send + Sync {
     fn node_type(&self) -> VNodeType; // 节点类型
-    fn metadata(&self) -> Result<Metadata, VfsError>;
-    fn open(&self) -> Result<Box<dyn File>, VfsError>;
-    fn lookup(&self, name: &str) -> Result<Arc<dyn VNode>, VfsError>;
-    fn create(&self, name: &str, typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError>;
+    fn metadata(&self) -> Result<Metadata, VfsError>; // 元数据
+    fn open(&self) -> Result<Box<dyn File>, VfsError>; // 打开VNodes
+    fn lookup(&self, name: &str) -> Result<Arc<dyn VNode>, VfsError>; // 查找子节点
+    fn create(&self, name: &str, typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError>; // 创建子节点
     fn as_device(&self) -> Option<&Device> {
         None
     }
