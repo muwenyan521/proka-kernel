@@ -26,12 +26,12 @@ macro_rules! dual_println {
 
 // 内部函数：处理控制台打印
 #[doc(hidden)]
-pub(crate) fn _dual_print_console(args: core::fmt::Arguments) {
+pub fn _dual_print_console(args: core::fmt::Arguments) {
     console_print(args);
 }
 
 // 内部函数：处理串口打印
 #[doc(hidden)]
-pub(crate) fn _dual_print_serial(args: core::fmt::Arguments) {
+pub fn _dual_print_serial(args: core::fmt::Arguments) {
     serial_print(args);
 }

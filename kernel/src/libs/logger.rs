@@ -1,4 +1,3 @@
-// src/libs/logger.rs
 use crate::dual_println;
 use log::{Log, Metadata, Record};
 
@@ -13,11 +12,7 @@ impl Log for KernelLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let level = record.level();
-            let target = if !record.target().is_empty() {
-                record.target()
-            } else {
-                ""
-            };
+
             let color;
             match record.level() {
                 log::Level::Error => {
@@ -27,7 +22,7 @@ impl Log for KernelLogger {
                     color = "\x1b[33m";
                 }
                 log::Level::Info => {
-                    color = "\x1b[32m";
+                    color = "\x1b[37m";
                 }
                 log::Level::Debug => {
                     color = "\x1b[34m";
@@ -37,16 +32,26 @@ impl Log for KernelLogger {
                 }
             }
 
-            let _ = dual_println!("{}[{}] {}: {}\x1b[0m", color, level, target, record.args());
+            let _ = dual_println!("{}[{}] {}\x1b[0m", color, level, record.args());
         }
     }
 
     fn flush(&self) {}
 }
 
+#[macro_export]
+macro_rules! success {
+    ($($arg:tt)*) => {
+         dual_println!("\x1b[32m[SUCCESS] {}\x1b[0m", format_args!($($arg)*))
+    };
+}
+
 /// 初始化日志系统
 pub fn init_logger() {
     static LOGGER: KernelLogger = KernelLogger;
     log::set_logger(&LOGGER).expect("Failed to set logger");
+    #[cfg(debug_assertions)]
     log::set_max_level(log::LevelFilter::Trace);
+    #[cfg(not(debug_assertions))]
+    log::set_max_level(log::LevelFilter::Info);
 }

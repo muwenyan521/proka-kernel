@@ -20,7 +20,7 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-use log::{info, warn};
+use log::info;
 use proka_kernel::BASE_REVISION;
 
 /* C functions extern area */
@@ -36,29 +36,22 @@ pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
-    proka_kernel::libs::logger::init_logger();
-
-    println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION"));
-    println!("• Hello, World!");
+    proka_kernel::libs::logger::init_logger(); // 初始化日志系统
 
     proka_kernel::output::console::CONSOLE
         .lock()
         .cursor_hidden();
 
+    println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION")); // 输出欢迎信息
+
     proka_kernel::interrupts::gdt::init();
-    println!("• GDT Initialized");
+    info!("GDT Initialized");
     proka_kernel::interrupts::idt::init_idt();
-    println!("• IDT initialized");
-
+    info!("IDT initialized");
     proka_kernel::interrupts::apic::init();
-    println!("• APIC initialized");
-    println!("• Kernel ready");
+    info!("APIC initialized");
 
-    info!("INFO");
-    warn!("WARN");
-    log::debug!("DEBUG");
-    log::trace!("TRACE");
-    log::error!("ERROR");
+    success!("Kernel ready!");
 
     let vfs = proka_kernel::fs::vfs::Vfs::new();
     vfs.mount(None, "/", "memfs", None).unwrap();
