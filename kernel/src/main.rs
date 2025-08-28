@@ -52,7 +52,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     proka_kernel::interrupts::apic::init();
     println!("• APIC initialized");
-
+    println!("\x1b[31mThis text is red.\x1b[0m");
     println!("• Kernel ready");
 
     let vfs = proka_kernel::fs::vfs::Vfs::new();
