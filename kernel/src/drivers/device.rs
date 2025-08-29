@@ -3,13 +3,12 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicUsize, Ordering}; // For open count
+use core::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
-use spin::Mutex; // 新增：用于跟踪次设备号
+use log::debug;
+use spin::Mutex;
 
-// 用于自动分配设备号的简单计数器（实际操作系统会更复杂）
-// static NEXT_MAJOR: AtomicUsize = AtomicUsize::new(1);
-// static NEXT_MINOR: AtomicUsize = AtomicUsize::new(0);
+use crate::serial_println;
 
 lazy_static! {
     pub static ref DEVICE_MANAGER: Mutex<DeviceManager> = Mutex::new(DeviceManager::new());
@@ -19,10 +18,8 @@ lazy_static! {
 pub enum DeviceType {
     Block,
     Char,
-    // Future: Network, Input, Pseudo, etc.
 }
 
-/// 更详细的设备错误类型
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DeviceError {
     InvalidParam,
@@ -30,48 +27,49 @@ pub enum DeviceError {
     IoError,
     PermissionsDenied,
     NoSuchDevice,
-    WouldBlock, // Non-blocking operation would block
-    Busy,       // Device is currently busy
+    WouldBlock,
+    Busy,
     OutOfMemory,
     DeviceClosed,
     BufferTooSmall,
     AlreadyOpen,
     NotOpen,
     AddressOutOfRange,
-    DeviceAlreadyRegistered, // 新增：设备已注册错误
-    DeviceNumberConflict,    // 新增：设备号冲突错误
+    DeviceAlreadyRegistered,
+    DeviceNumberConflict,
+    DeviceNotRegistered, // 新增：设备未注册错误
+    DeviceStillInUse,    // 新增：设备仍在使用中
 }
 
-/// 所有设备类型通用的操作
-pub trait SharedDeviceOps: Send + Sync {
-    /// 获取设备名称。
-    fn name(&self) -> &str;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanInfo {
+    pub device_id: String,                                 // 设备唯一标识
+    pub protocol_type: String,                             // 通信协议类型（如USB/PCI/I2C）
+    pub vendor_id: Option<u16>,                            // 供应商ID
+    pub product_id: Option<u16>,                           // 产品ID
+    pub additional_data: Option<BTreeMap<String, String>>, // 附加数据
+}
 
-    /// 获取设备的逻辑类型（块设备或字符设备）。
+pub trait SharedDeviceOps: Send + Sync {
+    fn name(&self) -> &str;
     fn device_type(&self) -> DeviceType;
 
-    /// 打开设备。管理内部打开计数或初始化资源。
     fn open(&self) -> Result<(), DeviceError>;
-
-    /// 关闭设备。减少内部打开计数或释放资源。
     fn close(&self) -> Result<(), DeviceError>;
-
-    /// 执行设备特定的控制操作。
-    /// `cmd` 是命令代码，`arg` 是参数（可以是值或指向数据的指针）。
-    /// 返回一个 `u64` 结果或错误。
     fn ioctl(&self, cmd: u64, arg: u64) -> Result<u64, DeviceError>;
+
+    fn sync(&self) -> Result<(), DeviceError> {
+        Err(DeviceError::NotSupported)
+    }
+    fn is_compatible(&self, _scan_info: &ScanInfo) -> bool {
+        false
+    }
 }
 
-/// 块设备特有的操作
 pub trait BlockDeviceOps: SharedDeviceOps {
-    /// 返回设备的逻辑块大小（字节）。
     fn block_size(&self) -> usize;
-
-    /// 返回设备上的总块数。
     fn num_blocks(&self) -> usize;
 
-    /// 从 `block_idx` 读取 `num_blocks` 到 `buf`。
-    /// `buf` 的长度必须是 `num_blocks * block_size()`。
     fn read_blocks(
         &self,
         block_idx: usize,
@@ -79,64 +77,60 @@ pub trait BlockDeviceOps: SharedDeviceOps {
         buf: &mut [u8],
     ) -> Result<usize, DeviceError>;
 
-    /// 从 `buf` 写入 `num_blocks` 到 `block_idx`。
-    /// `buf` 的长度必须是 `num_blocks * block_size()`。
     fn write_blocks(
         &self,
         block_idx: usize,
         num_blocks: usize,
         buf: &[u8],
     ) -> Result<usize, DeviceError>;
+
+    // 新增擦除块操作
+    fn erase_blocks(&self, start_block: usize, num_blocks: usize) -> Result<usize, DeviceError> {
+        let _ = (start_block, num_blocks);
+        Err(DeviceError::NotSupported)
+    }
 }
 
-/// 字符设备特有的操作
 pub trait CharDeviceOps: SharedDeviceOps {
-    /// 从设备读取字节到 `buf`。对于字符设备，通常是流式的，不使用偏移量。
-    /// 返回实际读取的字节数。
     fn read(&self, buf: &mut [u8]) -> Result<usize, DeviceError>;
-
-    /// 从 `buf` 写入字节到设备。对于字符设备，通常是流式的，不使用偏移量。
-    /// 返回实际写入的字节数。
     fn write(&self, buf: &[u8]) -> Result<usize, DeviceError>;
 
-    /// 窥视（非消耗性读取）设备中的字节到 `buf`。
-    /// 默认实现返回 `NotSupported`。
     fn peek(&self, buf: &mut [u8]) -> Result<usize, DeviceError> {
-        let _ = buf; // 避免未使用的警告
+        let _ = buf;
         Err(DeviceError::NotSupported)
     }
 
-    /// 检查是否有数据可供读取。
-    /// 默认实现返回 `false`。
     fn has_data(&self) -> bool {
         false
     }
 
-    /// 检查是否有空间可供写入。
-    /// 默认实现返回 `false`。
     fn has_space(&self) -> bool {
         false
     }
+
+    // 新增非阻塞操作支持
+    fn set_nonblocking(&self, nonblocking: bool) -> Result<(), DeviceError> {
+        let _ = nonblocking;
+        Err(DeviceError::NotSupported)
+    }
 }
 
-/// 代表设备具体实现操作的枚举。
 pub enum DeviceInner {
     Block(Arc<dyn BlockDeviceOps>),
     Char(Arc<dyn CharDeviceOps>),
+    Network, // 为未来扩展预留
 }
 
-/// 公共设备结构体，包含通用元数据和具体实现。
 pub struct Device {
     pub name: String,
-    pub major: u16, // 主设备号 (如：标识设备类型或控制器)
-    pub minor: u16, // 次设备号 (如：标识特定设备实例)
+    pub major: u16,
+    pub minor: u16,
     inner: DeviceInner,
-    open_count: AtomicUsize, // 内部打开计数
+    open_count: AtomicUsize,
+    is_registered: bool, // 新增：跟踪设备注册状态
 }
 
 impl Device {
-    /// 构造一个新的设备。调用者提供其具体实现 (DeviceInner)。
-    /// 用户需要手动指定 major/minor 号。
     pub fn new(name: String, major: u16, minor: u16, inner: DeviceInner) -> Self {
         Self {
             name,
@@ -144,69 +138,74 @@ impl Device {
             minor,
             inner,
             open_count: AtomicUsize::new(0),
+            is_registered: false,
         }
     }
 
-    /// 构造一个新的设备，并让 `DeviceManager` 自动分配 major/minor 号。
-    /// 在添加到 `DeviceManager` 时，major/minor 号会被填充。
     pub fn new_auto_assign(name: String, inner: DeviceInner) -> Self {
         Self {
             name,
-            major: 0, // 初始为0，表示待分配
-            minor: 0, // 初始为0，表示待分配
+            major: 0,
+            minor: 0,
             inner,
             open_count: AtomicUsize::new(0),
+            is_registered: false,
         }
     }
 
-    /// 获取底层 SharedDeviceOps trait 对象的引用（用于通用操作）。
     #[inline]
     fn shared_ops(&self) -> &dyn SharedDeviceOps {
         match &self.inner {
-            DeviceInner::Block(ops) => ops.as_ref(), // 将 Arc<dyn Trait> 转换为 &dyn Trait
+            DeviceInner::Block(ops) => ops.as_ref(),
             DeviceInner::Char(ops) => ops.as_ref(),
+            _ => unimplemented!(),
         }
     }
 
-    // --- 通用操作的委托方法 ---
-    /// 获取设备的逻辑类型。
     pub fn device_type(&self) -> DeviceType {
         self.shared_ops().device_type()
     }
 
-    /// 打开设备。
     pub fn open(&self) -> Result<(), DeviceError> {
+        if !self.is_registered {
+            return Err(DeviceError::DeviceNotRegistered);
+        }
+
         let current_count = self.open_count.fetch_add(1, Ordering::SeqCst);
         if current_count == 0 {
-            // 如果是第一次打开，则调用驱动的 open 方法
             self.shared_ops().open()?;
         }
         Ok(())
     }
 
-    /// 关闭设备。
     pub fn close(&self) -> Result<(), DeviceError> {
+        if !self.is_registered {
+            return Err(DeviceError::DeviceNotRegistered);
+        }
+
         let current_count = self.open_count.fetch_sub(1, Ordering::SeqCst);
         if current_count == 1 {
-            // 如果是最后一次关闭，则调用驱动的 close 方法
             self.shared_ops().close()?;
         } else if current_count == 0 {
-            // 尝试关闭一个未打开的设备
             return Err(DeviceError::NotOpen);
         }
         Ok(())
     }
 
-    /// 执行设备特定的控制操作。
     pub fn ioctl(&self, cmd: u64, arg: u64) -> Result<u64, DeviceError> {
+        if !self.is_registered {
+            return Err(DeviceError::DeviceNotRegistered);
+        }
         if self.open_count.load(Ordering::SeqCst) == 0 {
-            return Err(DeviceError::DeviceClosed); // 必须先打开设备
+            return Err(DeviceError::DeviceClosed);
         }
         self.shared_ops().ioctl(cmd, arg)
     }
 
-    // --- 类型特定访问器 ---
-    /// 如果设备是块设备，返回对其 `BlockDeviceOps` 实现的引用。
+    pub fn is_open(&self) -> bool {
+        self.open_count.load(Ordering::Relaxed) > 0
+    }
+
     pub fn as_block_device(&self) -> Option<&Arc<dyn BlockDeviceOps>> {
         if let DeviceInner::Block(ref ops) = self.inner {
             Some(ops)
@@ -215,7 +214,6 @@ impl Device {
         }
     }
 
-    /// 如果设备是字符设备，返回对其 `CharDeviceOps` 实现的引用。
     pub fn as_char_device(&self) -> Option<&Arc<dyn CharDeviceOps>> {
         if let DeviceInner::Char(ref ops) = self.inner {
             Some(ops)
@@ -223,13 +221,36 @@ impl Device {
             None
         }
     }
+
+    // 新增：标记注册状态
+    fn mark_registered(&mut self) {
+        self.is_registered = true;
+    }
+
+    // 新增：取消注册状态
+    fn mark_unregistered(&mut self) {
+        self.is_registered = false;
+    }
+}
+
+impl core::fmt::Debug for Device {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Device {{ name: {}, major: {}, minor: {}, open_count: {}, is_registered: {} }}",
+            self.name,
+            self.major,
+            self.minor,
+            self.open_count.load(Ordering::SeqCst),
+            self.is_registered
+        )
+    }
 }
 
 pub struct DeviceManager {
     devices: Vec<Device>,
-    // 为每个主设备号跟踪下一个可用的次设备号
-    // key: major, value: next_minor
     next_minor_counters: BTreeMap<u16, u16>,
+    free_minors: BTreeMap<u16, Vec<u16>>, // 新增：空闲次设备号回收
 }
 
 impl DeviceManager {
@@ -237,24 +258,25 @@ impl DeviceManager {
         Self {
             devices: Vec::new(),
             next_minor_counters: BTreeMap::new(),
+            free_minors: BTreeMap::new(), // 初始化空闲次设备号映射
         }
     }
 
-    /// 注册一个设备。将检查设备名称和 major/minor 号的唯一性。
-    /// 如果设备的 major/minor 为 (0,0)，则会自动分配。
     pub fn register_device(&mut self, mut device: Device) -> Result<(), DeviceError> {
-        // 检查名称是否重复
+        // 检查名称冲突
         if self.devices.iter().any(|d| d.name == device.name) {
             return Err(DeviceError::DeviceAlreadyRegistered);
         }
 
-        // 如果 major/minor 是 (0,0)，则自动分配
+        // 自动分配设备号
         if device.major == 0 && device.minor == 0 {
-            let (major, minor) = self.alloc_major_minor(device.device_type());
+            let (major, minor) = self.alloc_device_number(device.device_type())?;
             device.major = major;
             device.minor = minor;
-        } else {
-            // 如果指定了 major/minor，检查是否冲突
+        }
+        // 手动分配设备号
+        else {
+            // 检查设备号冲突
             if self
                 .devices
                 .iter()
@@ -262,66 +284,101 @@ impl DeviceManager {
             {
                 return Err(DeviceError::DeviceNumberConflict);
             }
-            // 更新该 major 的 next_minor_counters
-            self.next_minor_counters
-                .entry(device.major)
-                .and_modify(|next_minor| {
-                    if device.minor >= *next_minor {
-                        *next_minor = device.minor + 1;
-                    }
-                })
-                .or_insert(device.minor + 1);
+
+            // 更新该主设备号的次设备号追踪器
+            self.update_minor_counter(device.major, device.minor);
         }
 
+        device.mark_registered(); // 标记为已注册
         self.devices.push(device);
         Ok(())
     }
 
-    /// 自动分配一个新的 major/minor 设备号。
-    /// 这里的分配策略可以根据需要复杂化，例如重用已释放的次设备号等。
-    fn alloc_major_minor(&mut self, device_type: DeviceType) -> (u16, u16) {
-        // 设备类型分配一个主设备号范围
+    // 重构设备号分配函数
+    fn alloc_device_number(&mut self, device_type: DeviceType) -> Result<(u16, u16), DeviceError> {
         let major = match device_type {
             DeviceType::Char => 1,
             DeviceType::Block => 2,
         };
 
-        let next_minor = self.next_minor_counters.entry(major).or_insert(0);
-        let minor = *next_minor;
-        *next_minor += 1; // 递增下一个可用的次设备号
-
-        // 确保分配的major/minor没有被占用
-        // 在 `register_device` 中会再次检查，这里主要用于生成新的号
-        // 循环查找确实未被占用的次设备号
-        let mut allocated_minor = minor;
-        loop {
-            let is_occupied = self
-                .devices
-                .iter()
-                .any(|d| d.major == major && d.minor == allocated_minor);
-            if !is_occupied {
-                break;
-            }
-            allocated_minor += 1;
-            *self.next_minor_counters.get_mut(&major).unwrap() = allocated_minor + 1;
+        // 优先尝试从回收的次设备号中分配
+        if let Some(minor) = self.free_minors.get_mut(&major).and_then(|v| v.pop()) {
+            return Ok((major, minor));
         }
 
-        (major, allocated_minor)
+        // 从计数器中分配新次设备号
+        let next_minor = self.next_minor_counters.entry(major).or_insert(0);
+        let mut current_minor = *next_minor;
+
+        // 查找可用次设备号 (最多尝试65535次)
+        for _ in 0..u16::MAX as usize {
+            // 将 is_minor_used 的逻辑内联以避免同时持有可变和不可变借用
+            let is_used = self
+                .devices
+                .iter()
+                .any(|d| d.major == major && d.minor == current_minor);
+
+            if !is_used {
+                *next_minor = current_minor.checked_add(1).unwrap_or(0);
+                return Ok((major, current_minor));
+            }
+            current_minor = current_minor.checked_add(1).unwrap_or(0);
+        }
+
+        Err(DeviceError::OutOfMemory)
     }
 
-    /// 根据设备名称获取设备。
+    pub fn is_minor_used(&self, major: u16, minor: u16) -> bool {
+        self.devices
+            .iter()
+            .any(|d| d.major == major && d.minor == minor)
+    }
+
+    fn update_minor_counter(&mut self, major: u16, minor: u16) {
+        let counter = self.next_minor_counters.entry(major).or_insert(0);
+        if minor >= *counter {
+            *counter = minor + 1;
+        }
+    }
+
+    pub fn unregister_device(&mut self, name: &str) -> Result<(), DeviceError> {
+        let position = self.devices.iter().position(|d| d.name == name);
+
+        if let Some(index) = position {
+            if self.devices[index].is_open() {
+                return Err(DeviceError::DeviceStillInUse);
+            }
+
+            let mut device = self.devices.remove(index);
+            device.mark_unregistered(); // 更新注册状态
+
+            // 回收设备号
+            self.reclaim_device_number(device.major, device.minor);
+            Ok(())
+        } else {
+            Err(DeviceError::NoSuchDevice)
+        }
+    }
+
+    // 新增设备号回收方法
+    fn reclaim_device_number(&mut self, major: u16, minor: u16) {
+        self.free_minors
+            .entry(major)
+            .or_insert_with(Vec::new)
+            .push(minor);
+    }
+
+    // 其他方法保持不变
     pub fn get_device(&self, name: &str) -> Option<&Device> {
         self.devices.iter().find(|d| d.name == name)
     }
 
-    /// 根据 major 和 minor 号获取设备。
     pub fn get_device_by_major_minor(&self, major: u16, minor: u16) -> Option<&Device> {
         self.devices
             .iter()
             .find(|d| d.major == major && d.minor == minor)
     }
 
-    /// 根据设备类型获取所有匹配的设备。
     pub fn get_devices_by_type(&self, device_type: DeviceType) -> Vec<&Device> {
         self.devices
             .iter()
@@ -329,17 +386,8 @@ impl DeviceManager {
             .collect()
     }
 
-    /// 注销设备。
-    pub fn unregister_device(&mut self, name: &str) -> bool {
-        if let Some(index) = self.devices.iter().position(|d| d.name == name) {
-            let _removed_device = self.devices.remove(index);
-            // 注意：这里没有将 major/minor 标记为可重用，
-            // 简单的实现是直接放弃这些号。更复杂的系统会维护一个空闲列表。
-            // 如果需要重用，需要在这里更新 next_minor_counters 或其他机制。
-            true
-        } else {
-            false
-        }
+    pub fn list_devices(&self) -> Vec<&Device> {
+        self.devices.iter().collect()
     }
 }
 
@@ -349,5 +397,5 @@ pub fn init_devices() {
         .register_device(super::char::serial::SerialDevice::create_device(
             1, 0, 0x3f8,
         ))
-        .unwrap();
+        .expect("Failed to register serial device");
 }
