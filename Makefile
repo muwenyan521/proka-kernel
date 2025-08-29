@@ -5,7 +5,7 @@
 # order to help us to make a Rust kernel more easily.
 #
 #
-.PHONY: clean debug run makeiso
+.PHONY: clean debug run iso
 # Define some basic variables
 BUILD_DIRS = kernel
 OBJ_DIR = $(PWD)/target/obj
@@ -22,22 +22,26 @@ all:
 
 ## Build the ISO image
 # This code is from TMXQWQ/TKernel2 in github
-makeiso: all kernel/kernel
+iso: all kernel/kernel initrd
 	mkdir -p iso
 	cp -r ./assets/rootfs/* ./iso/
+	cp ./assets/initrd.cpio ./iso/initrd.cpio
+	rm -f ./assets/initrd.cpio
 	cp ./kernel/kernel ./iso/kernel
-# 	cp ./initrd.img ./iso	# TODO: Support initrd
 	touch ./proka-kernel.iso
 	xorriso $(XORRISOFLAGS) ./iso -o ./proka-kernel.iso \
 	  2> /dev/null
 	rm -rf ./iso
 	@echo "ISO image built: proka-kernel.iso"
 
-run: makeiso
+initrd:
+	cd ./assets/initrd && find . -print | cpio -H newc -v -o > ../initrd.cpio && cd ../..
+
+run: iso
 	qemu-system-x86_64 -enable-kvm $(QEMU_FLAGS) $(QEMU_OUT)
 	@echo "QEMU started"
 
-debug: makeiso
+debug: iso
 	qemu-system-x86_64 -enable-kvm $(QEMU_FLAGS) $(QEMU_OUT) -s -S
 
 clean:

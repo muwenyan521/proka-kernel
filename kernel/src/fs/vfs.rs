@@ -8,7 +8,12 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
+use lazy_static::lazy_static;
 use spin::{Mutex, RwLock};
+
+lazy_static! {
+    pub static ref VFS: Mutex<Vfs> = Mutex::new(Vfs::new());
+}
 
 #[derive(Debug)]
 pub enum VfsError {

@@ -20,6 +20,7 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
+use alloc::string::String;
 use log::{debug, info};
 use proka_kernel::BASE_REVISION;
 use proka_kernel::drivers::init_devices;
@@ -64,29 +65,29 @@ pub extern "C" fn kernel_main() -> ! {
     }
 
     success!("Kernel ready!");
-
-    let vfs = proka_kernel::fs::vfs::Vfs::new();
-    vfs.mount(None, "/", "memfs", None).unwrap();
-    let root_node = vfs.lookup("/").unwrap();
-    root_node
-        .create("myfile.txt", proka_kernel::fs::vfs::VNodeType::File)
-        .unwrap();
-    let file_node = vfs.lookup("/myfile.txt").unwrap();
-
-    {
-        let mut file = file_node.open().unwrap();
-        file.write(b"Hello, MemFs!").unwrap();
-    }
-
-    // Read file
-    {
-        let file = file_node.open().unwrap();
-        let mut buf = [0u8; 32];
-        let len = file.read(&mut buf).unwrap();
-        println!(
-            "Read content: {}",
-            alloc::string::String::from_utf8_lossy(&buf[..len])
-        );
+    if let Some(initrd) = proka_kernel::MODULE_REQUEST.get_response() {
+        let inir = initrd.modules()[0];
+        unsafe {
+            let slice: &[u8] = core::slice::from_raw_parts(inir.addr(), inir.size() as usize);
+            let raw_reader = proka_kernel::libs::initrd::CpioNewcReader::new(slice);
+            for obj_result in raw_reader {
+                match obj_result {
+                    Ok(obj) => {
+                        println!("Found object:");
+                        println!("  Name: {}", obj.name);
+                        println!(
+                            "  Data: {:?}",
+                            core::str::from_utf8(obj.data).unwrap_or("<binary data>")
+                        );
+                        println!("  Metadata: {:?}", obj.metadata);
+                    }
+                    Err(_) => {
+                        println!("Error reading object.");
+                    }
+                }
+            }
+            println!("--- Finished RawCpioNewcReader ---");
+        }
     }
 
     loop {

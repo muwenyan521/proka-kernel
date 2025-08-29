@@ -22,7 +22,8 @@ pub mod test;
 
 use limine::{
     BaseRevision,
-    request::{FramebufferRequest, MemoryMapRequest},
+    modules::InternalModule,
+    request::{FramebufferRequest, MemoryMapRequest, ModuleRequest},
 };
 
 /* The section data define area */
@@ -39,6 +40,11 @@ pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 #[unsafe(link_section = ".requests")]
 #[used]
 pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+
+#[unsafe(link_section = ".requests")]
+#[used]
+pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new()
+    .with_internal_modules(&[&InternalModule::new().with_path(c"/initrd.cpio")]);
 
 /// This will extern the C function and make it to safe.
 ///
