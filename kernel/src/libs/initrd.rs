@@ -1,3 +1,13 @@
+// src/libs/initrd.rs
+extern crate alloc;
+use crate::fs::vfs::{VFS, VNodeType, VfsError};
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use log::{error, info, warn};
+
+/// This code is originally from https://github.com/rcore-os/cpio/blob/main/src/lib.rs, with minor modifications made here.
+
 /// A CPIO file (newc format) reader.
 ///
 /// # Example
@@ -7,7 +17,7 @@
 ///
 /// let reader = CpioNewcReader::new(&[]);
 /// for obj in reader {
-///     println!("{}", obj.unwrap().name);    
+///     println!("{}", obj.unwrap().name);
 /// }
 /// ```
 pub struct CpioNewcReader<'a> {
@@ -156,4 +166,127 @@ pub struct Metadata {
     pub dev_minor: u32,
     pub rdev_major: u32,
     pub rdev_minor: u32,
+}
+
+// CPIO mode constants
+const CPIO_S_IFMT: u32 = 0o170000; // Mask for file type
+const CPIO_S_IFDIR: u32 = 0o040000; // Directory
+const CPIO_S_IFREG: u32 = 0o100000; // Regular file
+const CPIO_S_IFLNK: u32 = 0o120000; // Symbolic link
+
+/// Loads the initial RAM disk (initrd) into the Virtual File System (VFS).
+///
+/// This function parses a CPIO archive provided as raw bytes, extracts its
+/// contents, and recreates the file and directory structure within the VFS.
+///
+/// # Arguments
+/// * `initrd_data` - A byte slice containing the CPIO archive data.
+///
+/// # Returns
+/// A `Result` indicating success or a `VfsError` if any operation fails.
+pub fn load_initrd(initrd_data: &[u8]) -> Result<(), VfsError> {
+    info!("Loading initrd...");
+    let reader = CpioNewcReader::new(initrd_data);
+    let vfs = VFS.lock(); // Lock VFS for the duration of initrd loading
+
+    for obj_result in reader {
+        let obj = obj_result.map_err(|e| {
+            error!("CPIO read error: {:?}", e);
+            VfsError::IoError
+        })?;
+
+        let path = obj.name;
+        if path == "TRAILER!!!" {
+            continue; // Skip the trailer entry, already handled by iterator but good for explicit check
+        }
+
+        // Normalize path: CPIO paths are often like "foo/bar" or "./foo/bar".
+        // We want absolute paths in VFS, e.g., "/foo/bar".
+        let canonical_path = if path.starts_with('/') {
+            path.to_string()
+        } else if path.starts_with("./") {
+            format!("/{}", &path[2..])
+        } else {
+            format!("/{}", path)
+        };
+
+        // Remove trailing slash unless it's the root itself.
+        let final_path = if canonical_path.len() > 1 && canonical_path.ends_with('/') {
+            canonical_path.trim_end_matches('/').to_string()
+        } else {
+            canonical_path
+        };
+
+        let node_type_mode = obj.metadata.mode & CPIO_S_IFMT;
+
+        // Ensure all parent directories exist for the current object's path.
+        // This loop iterates through path components and creates intermediate
+        // directories if they don't already exist.
+        let mut current_dir_segment = String::new();
+        let components: Vec<&str> = final_path.split('/').filter(|&s| !s.is_empty()).collect();
+
+        for (i, component) in components.iter().enumerate() {
+            current_dir_segment.push('/');
+            current_dir_segment.push_str(component);
+
+            // If it's an intermediate component OR the last component is a directory itself,
+            // ensure it exists and is a directory.
+            if i < components.len() - 1 || node_type_mode == CPIO_S_IFDIR {
+                match vfs.lookup(&current_dir_segment) {
+                    Ok(node) => {
+                        if node.node_type() != VNodeType::Dir {
+                            error!(
+                                "Path component '{}' for '{}' is not a directory!",
+                                current_dir_segment, final_path
+                            );
+                            return Err(VfsError::AlreadyExists); // Or a specific error
+                        }
+                    }
+                    Err(VfsError::NotFound) => {
+                        info!("Creating directory: {}", current_dir_segment);
+                        vfs.create_dir(&current_dir_segment).map_err(|e| {
+                            error!(
+                                "Failed to create directory {}: {:?}",
+                                current_dir_segment, e
+                            );
+                            e
+                        })?;
+                    }
+                    Err(e) => {
+                        error!("Error checking path {}: {:?}", current_dir_segment, e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        // Now, handle the actual CPIO object based on its type
+        match node_type_mode {
+            CPIO_S_IFDIR => {
+                // Directories are already handled by the loop above.
+                // If final_path is "/", it's already the VFS root.
+                info!("Processed directory: {}", final_path);
+            }
+            CPIO_S_IFREG => {
+                info!("Creating file: {}", final_path);
+                let file_node = vfs.create_file(&final_path)?;
+                let mut file_handle = file_node.open()?;
+                file_handle.write(obj.data)?;
+            }
+            CPIO_S_IFLNK => {
+                let target_path =
+                    core::str::from_utf8(obj.data).map_err(|_| VfsError::InvalidArgument)?;
+                info!("Creating symlink: {} -> {}", final_path, target_path);
+                vfs.create_symlink(target_path, &final_path)?;
+            }
+            _ => {
+                warn!(
+                    "Unsupported CPIO object type for {}: {:#o}",
+                    path, node_type_mode
+                );
+            }
+        }
+    }
+    info!("Finished loading initrd.");
+    Ok(())
 }

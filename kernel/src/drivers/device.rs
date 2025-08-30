@@ -5,10 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
-use log::debug;
 use spin::Mutex;
-
-use crate::serial_println;
 
 lazy_static! {
     pub static ref DEVICE_MANAGER: Mutex<DeviceManager> = Mutex::new(DeviceManager::new());

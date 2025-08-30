@@ -55,6 +55,7 @@ pub enum MemNodeContent {
 
 /// 内存文件系统中的一个节点（文件、目录或符号链接）
 pub struct MemVNode {
+    #[allow(dead_code)]
     id: usize, // 唯一的标识符，类似 inode 号
     node_type: VNodeType,
     metadata: RwLock<Metadata>, // 元数据，使用 RwLock 保护以允许并发读写
@@ -101,8 +102,10 @@ impl VNode for MemVNode {
                 // 对于文件类型，返回一个 MemFile 实例，它持有对本 VNode 及其数据的引用
                 Ok(Box::new(MemFile::new(
                     self.node_type,
-                    RwLock::new(self.metadata.read().clone()), // Fix E0599
-                    data.clone(),                 // Now clones the Arc
+                    RwLock::new(self.metadata.read().clone()),
+
+
+                    (*data).clone(),
                 )))
             }
             _ => Err(VfsError::NotAFile), // 只有文件可以被打开进行读写
@@ -208,6 +211,7 @@ impl VNode for MemVNode {
 
 /// 表示内存文件系统中的一个打开文件句柄
 pub struct MemFile {
+    #[allow(dead_code)]
     node_type: VNodeType,
     metadata: RwLock<Metadata>,     // 文件的元数据，用于 stat
     data_ref: Arc<RwLock<Vec<u8>>>, // 对实际文件数据的引用
