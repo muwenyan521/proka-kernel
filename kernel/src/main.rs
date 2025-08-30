@@ -81,16 +81,19 @@ pub extern "C" fn kernel_main() -> ! {
     } else {
         warn!("Initrd module request failed.");
     }
-    let mut buf = [0; 1024];
-    let content = VFS
-        .lock()
-        .open("/test.txt")
-        .unwrap()
-        .read(&mut buf)
-        .unwrap();
-    println!("{}", core::str::from_utf8(&buf[..content]).unwrap());
-
-    success!("Kernel ready!");
+    match VFS.lock().walk("/") {
+        Ok(results) => {
+            println!("VFS walk results for '/':");
+            for (dirpath, dirnames, filenames) in results {
+                println!("  Path: {}", dirpath);
+                println!("    Dirs: {:?}", dirnames);
+                println!("    Files: {:?}", filenames);
+            }
+        }
+        Err(e) => {
+            error!("Error during VFS walk: {:?}", e);
+        }
+    }
 
     loop {
         x86_64::instructions::hlt();

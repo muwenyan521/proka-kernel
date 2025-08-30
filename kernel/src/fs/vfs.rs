@@ -1,6 +1,7 @@
 use crate::drivers::{DEVICE_MANAGER, Device, DeviceError};
 extern crate alloc;
-use super::memfs::MemFs; // 假设 MemFs 在 drivers/memfs.rs 或类似位置
+use super::memfs::MemFs;
+use alloc::format;
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -17,7 +18,7 @@ lazy_static! {
 }
 
 /// VFS操作可能返回的错误类型
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)] // 增加 Clone, Copy 便于错误处理
 pub enum VfsError {
     NotFound,
     AlreadyExists,
@@ -33,6 +34,8 @@ pub enum VfsError {
     DeviceNotFound,
     EmptyPath,
     NotImplemented,
+    DirectoryNotEmpty, // 新增：目录非空错误
+    NotSupported,
 }
 
 impl From<DeviceError> for VfsError {
@@ -53,7 +56,7 @@ pub enum VNodeType {
 }
 
 /// 文件或目录的元数据
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)] // 增加 Eq, PartialEq
 pub struct Metadata {
     pub size: u64,
     pub permissions: u32, // UNIX权限位，如0o755
@@ -108,17 +111,34 @@ pub trait VNode: Send + Sync {
     fn node_type(&self) -> VNodeType;
     /// 获取节点的元数据。
     fn metadata(&self) -> Result<Metadata, VfsError>;
+
     /// 打开节点并返回一个文件操作句柄。
     fn open(&self) -> Result<Box<dyn File>, VfsError>;
     /// 在当前目录下查找名为 `name` 的子节点。
     fn lookup(&self, name: &str) -> Result<Arc<dyn VNode>, VfsError>;
+
     /// 在当前目录下创建名为 `name` 的子节点。
     fn create(&self, name: &str, typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError>;
+
+    /// 在当前目录下创建名为 `name` 的设备节点。
+    /// major 和 minor 是设备号，`device_type` 是设备类型（例如 Block 或 Char）。
+    fn create_device(
+        &self,
+        name: &str,
+        major: u16,
+        minor: u16,
+        device_type: crate::drivers::DeviceType,
+    ) -> Result<Arc<dyn VNode>, VfsError> {
+        let _ = (name, major, minor, device_type); // 默认实现什么也不做
+        Err(VfsError::NotImplemented)
+    }
+
     /// 在当前目录下创建名为 `name` 的符号链接，指向 `target_path`。
     fn create_symlink(&self, name: &str, target_path: &str) -> Result<Arc<dyn VNode>, VfsError> {
         let _ = (name, target_path);
         Err(VfsError::NotImplemented)
     }
+
     /// 删除当前目录下的子节点。
     fn remove(&self, name: &str) -> Result<(), VfsError> {
         let _ = name;
@@ -128,6 +148,12 @@ pub trait VNode: Send + Sync {
     fn read_symlink(&self) -> Result<String, VfsError> {
         Err(VfsError::NotAFile) // 默认实现，非符号链接返回错误
     }
+
+    /// 列出目录中的条目。只对 `VNodeType::Dir` 类型有效。
+    fn read_dir(&self) -> Result<Vec<String>, VfsError> {
+        Err(VfsError::NotADirectory)
+    }
+
     /// 如果节点是设备，返回其对应的 `Device` 引用。
     fn as_device(&self) -> Option<&Device> {
         None
@@ -275,16 +301,55 @@ impl Vfs {
         target_path: &str,
         link_path: &str,
     ) -> Result<Arc<dyn VNode>, VfsError> {
-        // 符号链接的创建通常是在其父目录中，并且它的内容是目标路径。
-        // `MemFs` 这样的文件系统需要支持 `create` 一个 `SymLink` 类型。
-        // 在 `create` 方法中，对于 `SymLink` 类型，需要传入 `target_path` 作为额外参数。
-        // 这里只是一个骨架，具体实现需要文件系统支持。
         let (parent_path, name) = self.split_path(link_path)?;
         let parent_vnode = self.lookup(parent_path)?;
         if parent_vnode.node_type() != VNodeType::Dir {
             return Err(VfsError::NotADirectory);
         }
         parent_vnode.create_symlink(name, target_path)
+    }
+
+    /// 创建一个设备节点。
+    pub fn create_device_node(
+        &self,
+        path: &str,
+        major: u16,
+        minor: u16,
+        device_type: crate::drivers::DeviceType,
+    ) -> Result<Arc<dyn VNode>, VfsError> {
+        let (parent_path, name) = self.split_path(path)?;
+        let parent_vnode = self.lookup(parent_path)?;
+        if parent_vnode.node_type() != VNodeType::Dir {
+            return Err(VfsError::NotADirectory);
+        }
+        parent_vnode.create_device(name, major, minor, device_type)
+    }
+
+    /// 删除指定路径的文件或目录。
+    pub fn remove(&self, path: &str) -> Result<(), VfsError> {
+        let (parent_path, name) = self.split_path(path)?;
+        let parent_vnode = self.lookup(parent_path)?;
+        if parent_vnode.node_type() != VNodeType::Dir {
+            return Err(VfsError::NotADirectory);
+        }
+        // 尝试删除，如果子节点是目录且非空，MemFs会返回 DirectoryNotEmpty
+        parent_vnode.remove(name)
+    }
+
+    /// 读取指定目录下的所有条目。
+    pub fn read_dir(&self, path: &str) -> Result<Vec<String>, VfsError> {
+        let vnode = self.lookup(path)?;
+        if vnode.node_type() != VNodeType::Dir {
+            return Err(VfsError::NotADirectory);
+        }
+        vnode.read_dir()
+    }
+
+    /// (可选) 重命名或移动一个文件/目录 (mv old_path new_path)
+    pub fn rename_move(&self, _old_path: &str, _new_path: &str) -> Result<(), VfsError> {
+        // TODO: 实现重命名和移动。这通常需要在一个文件系统内部进行，
+        // 或者跨文件系统进行时涉及复制和删除。
+        Err(VfsError::NotImplemented)
     }
 
     /// 内部辅助函数：根据路径查找VNode，并处理符号链接循环。
@@ -376,6 +441,92 @@ impl Vfs {
         } else {
             // 没有斜杠，说明是根目录下的文件/目录
             Ok(("/", path))
+        }
+    }
+
+    pub fn walk(
+        &self,
+        start_path: &str,
+    ) -> Result<Vec<(String, Vec<String>, Vec<String>)>, VfsError> {
+        let mut results = Vec::new();
+        // 使用一个栈来实现深度优先遍历
+        let mut stack: Vec<String> = Vec::new();
+        // 规范化起始路径并推入栈
+        let normalized_start_path = self.normalize_path(start_path);
+        stack.push(normalized_start_path);
+        while let Some(current_dir_path) = stack.pop() {
+            let current_vnode = self.lookup(&current_dir_path)?;
+            if current_vnode.node_type() != VNodeType::Dir {
+                // 如果不是目录，跳过并继续下一个（或者返回错误，取决于设计）
+                // 这里我们选择跳过，因为它可能是一个文件或符号链接指向文件
+                continue;
+            }
+            let entries = current_vnode.read_dir()?; // 获取当前目录的所有条目
+            let mut dirnames: Vec<String> = Vec::new();
+            let mut filenames: Vec<String> = Vec::new();
+            let mut subdirs_to_visit: Vec<String> = Vec::new(); // 存储需要加入栈的子目录
+            for entry_name in entries {
+                let entry_path = if current_dir_path == "/" {
+                    format!("/{}", entry_name)
+                } else {
+                    format!("{}/{}", current_dir_path, entry_name)
+                };
+                let entry_vnode = match self.lookup(&entry_path) {
+                    Ok(node) => node,
+                    Err(VfsError::NotFound) => {
+                        // 条目可能在查找时被删除，或者是一个坏的符号链接，跳过
+                        continue;
+                    }
+                    Err(e) => return Err(e), // 其他错误则直接返回
+                };
+                match entry_vnode.node_type() {
+                    VNodeType::Dir => {
+                        dirnames.push(entry_name.clone());
+                        subdirs_to_visit.push(entry_path); // 将子目录路径加入待访问列表
+                    }
+                    VNodeType::File | VNodeType::SymLink | VNodeType::Device => {
+                        filenames.push(entry_name.clone());
+                    }
+                }
+            }
+            // 按照 os.walk 的习惯，目录名和文件名是只包含名字，不含路径的
+            // 并且我们返回的是当前目录的完整路径
+            results.push((current_dir_path.clone(), dirnames, filenames));
+            // 将所有子目录按照字典序（或其他稳定顺序）逆序加入栈，
+            // 以保证在 `pop` 时实现深度优先的（正向）遍历顺序。
+            // 例如：如果 dirnames 是 ["bar", "foo"]，逆序后为 ["foo", "bar"]。
+            // 压栈后，先弹出 "bar" 遍历，再弹出 "foo" 遍历。
+            subdirs_to_visit.sort_unstable_by(|a, b| b.cmp(a)); // 逆序排序，使得pop时是正序
+            for subdir_path in subdirs_to_visit {
+                stack.push(subdir_path);
+            }
+        }
+        Ok(results)
+    }
+    /// 辅助函数：标准化路径，移除多余的斜杠，并确保以"/"开头但不会以"/"结尾（除非是根目录）。
+    fn normalize_path(&self, path: &str) -> String {
+        let parts: Vec<&str> = path
+            .split('/')
+            .filter(|&s| !s.is_empty() && s != ".") // 过滤空字符串和 "."
+            .collect();
+        let mut cleaned_parts = Vec::new();
+        for part in parts.iter() {
+            if *part == ".." {
+                // 如果不是根目录，则弹出上一个组件，实现 ".."
+                if let Some(last) = cleaned_parts.last_mut() {
+                    if last != &"" {
+                        // 避免弹出根目录
+                        cleaned_parts.pop();
+                    }
+                }
+            } else {
+                cleaned_parts.push(*part);
+            }
+        }
+        if cleaned_parts.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{}", cleaned_parts.join("/"))
         }
     }
 }

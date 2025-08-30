@@ -1,7 +1,5 @@
-// File: src/drivers/memfs.rs (或其他合适的位置)
-
 extern crate alloc;
-use crate::drivers::Device; // 假设 Device 类型在 crate::drivers 模块中
+use crate::drivers::{DEVICE_MANAGER, Device}; // 假设 Device, DeviceError 类型在 crate::drivers 模块中，并引入 DEVICE_MANAGER
 use crate::fs::vfs::{File, FileSystem, Metadata, VNode, VNodeType, VfsError};
 use alloc::{
     boxed::Box,
@@ -49,8 +47,11 @@ pub enum MemNodeContent {
     SymLink {
         target: String, // 符号链接的目标路径
     },
-    // MemFs 不直接管理设备节点，但为了实现 VNode trait，可作为占位符
-    Device,
+    Device {
+        major: u16,
+        minor: u16,
+        dev_type: crate::drivers::DeviceType,
+    },
 }
 
 /// 内存文件系统中的一个节点（文件、目录或符号链接）
@@ -70,7 +71,7 @@ impl MemVNode {
             MemNodeContent::File { data } => data.read().len() as u64,
             MemNodeContent::Dir { .. } => 0, // 目录通常在 stat 中显示大小为 0
             MemNodeContent::SymLink { target } => target.len() as u64,
-            MemNodeContent::Device => 0,
+            MemNodeContent::Device { .. } => 0,
         };
         Arc::new(Self {
             id,
@@ -103,12 +104,26 @@ impl VNode for MemVNode {
                 Ok(Box::new(MemFile::new(
                     self.node_type,
                     RwLock::new(self.metadata.read().clone()),
-
-
                     (*data).clone(),
                 )))
             }
-            _ => Err(VfsError::NotAFile), // 只有文件可以被打开进行读写
+            MemNodeContent::Device {
+                major,
+                minor,
+                dev_type,
+            } => {
+                // 对于设备文件，尝试通过设备管理器打开
+                let device_manager = DEVICE_MANAGER.lock();
+                let device = device_manager
+                    .get_device_by_major_minor(*major, *minor)
+                    .ok_or(VfsError::DeviceNotFound)?;
+                if device.device_type() != *dev_type {
+                    return Err(VfsError::InvalidArgument); // 类型不匹配
+                }
+                device.open()?; // 增加设备的打开计数
+                Ok(Box::new(MemDeviceFile::new(device.clone())))
+            }
+            _ => Err(VfsError::NotAFile), // 只有文件和设备可以被打开进行读写
         }
     }
 
@@ -116,11 +131,11 @@ impl VNode for MemVNode {
         match &self.content {
             MemNodeContent::Dir { entries } => {
                 let entries_read = entries.read();
+                // 优化：在`map`中将`MemVNode`转换为`dyn VNode`，避免提前clone
                 entries_read
                     .get(name)
-                    .cloned()
-                    .map(|node| node as Arc<dyn VNode>)
-                    .ok_or(VfsError::NotFound) // Fix E0308
+                    .map(|node| node.clone() as Arc<dyn VNode>)
+                    .ok_or(VfsError::NotFound)
             }
             _ => Err(VfsError::NotADirectory), // 只有目录可以进行查找操作
         }
@@ -149,16 +164,53 @@ impl VNode for MemVNode {
                     ),
                     VNodeType::SymLink => {
                         return Err(VfsError::NotImplemented);
-                    }
+                    } // 符号链接有专门的create_symlink
                     VNodeType::Device => {
                         return Err(VfsError::NotImplemented);
-                    }
+                    } // 设备节点有专门的create_device
                 };
                 entries_write.insert(name.to_string(), new_node.clone());
                 self.update_mtime(); // 父目录的修改时间变化
                 Ok(new_node)
             }
             _ => Err(VfsError::NotADirectory), // 只有目录可以创建子节点
+        }
+    }
+
+    fn create_device(
+        &self,
+        name: &str,
+        major: u16,
+        minor: u16,
+        device_type: crate::drivers::DeviceType,
+    ) -> Result<Arc<dyn VNode>, VfsError> {
+        match &self.content {
+            MemNodeContent::Dir { entries } => {
+                let mut entries_write = entries.write();
+                if entries_write.contains_key(name) {
+                    return Err(VfsError::AlreadyExists);
+                }
+
+                // 在创建设备节点前，先确认设备管理器中存在该设备
+                let device_manager = DEVICE_MANAGER.lock();
+                let _ = device_manager
+                    .get_device_by_major_minor(major, minor)
+                    .ok_or(VfsError::DeviceNotFound)?;
+                drop(device_manager); // 释放锁
+
+                let new_node = MemVNode::new(
+                    VNodeType::Device,
+                    MemNodeContent::Device {
+                        major,
+                        minor,
+                        dev_type: device_type,
+                    },
+                );
+                entries_write.insert(name.to_string(), new_node.clone());
+                self.update_mtime();
+                Ok(new_node)
+            }
+            _ => Err(VfsError::NotADirectory),
         }
     }
 
@@ -187,7 +239,19 @@ impl VNode for MemVNode {
         match &self.content {
             MemNodeContent::Dir { entries } => {
                 let mut entries_write = entries.write();
-                if entries_write.remove(name).is_some() {
+                if let Some(node_to_remove) = entries_write.get(name) {
+                    if node_to_remove.node_type() == VNodeType::Dir {
+                        // 检查目录是否为空
+                        if let MemNodeContent::Dir {
+                            entries: sub_entries,
+                        } = &node_to_remove.content
+                        {
+                            if !sub_entries.read().is_empty() {
+                                return Err(VfsError::DirectoryNotEmpty);
+                            }
+                        }
+                    }
+                    entries_write.remove(name);
                     self.update_mtime(); // 父目录的修改时间变化
                     Ok(())
                 } else {
@@ -205,8 +269,12 @@ impl VNode for MemVNode {
         }
     }
 
-    // `as_device` 默认返回 None，因为 MemFs VNode 实例不直接代表设备。
-    // 如果 VFS 需要将设备节点包装成 VNode，那应该在 VFS 层处理。
+    fn read_dir(&self) -> Result<Vec<String>, VfsError> {
+        match &self.content {
+            MemNodeContent::Dir { entries } => Ok(entries.read().keys().cloned().collect()),
+            _ => Err(VfsError::NotADirectory),
+        }
+    }
 }
 
 /// 表示内存文件系统中的一个打开文件句柄
@@ -264,19 +332,13 @@ impl File for MemFile {
     fn write(&mut self, buf: &[u8]) -> Result<usize, VfsError> {
         let mut cursor = self.cursor.lock();
         let mut data = self.data_ref.write();
-        let data_len = data.len() as u64;
+        let _data_len = data.len() as u64;
 
         let start_idx = *cursor as usize;
         let bytes_to_write = buf.len();
 
-        // Fix E0502: Get data.len() before calling data.reserve
-        let current_data_vec_len = data.len();
-        if start_idx + bytes_to_write > data.capacity() {
-            data.reserve(start_idx + bytes_to_write - current_data_vec_len);
-        }
-
         // 如果写入位置超出当前文件大小，则扩展文件并用零填充
-        if start_idx + bytes_to_write > data_len as usize {
+        if start_idx + bytes_to_write > data.len() {
             data.resize(start_idx + bytes_to_write, 0);
         }
 
@@ -316,6 +378,48 @@ impl File for MemFile {
         }
         self.update_metadata(data.len() as u64); // 更新文件大小和修改时间
         Ok(())
+    }
+}
+
+// 新增：表示内存文件系统中的一个打开的设备文件句柄
+pub struct MemDeviceFile {
+    device: Device, // 对实际设备的引用
+}
+
+impl MemDeviceFile {
+    fn new(device: Device) -> Self {
+        Self { device }
+    }
+}
+
+impl File for MemDeviceFile {
+    fn read(&self, buf: &mut [u8]) -> Result<usize, VfsError> {
+        match self.device.as_char_device() {
+            Some(char_dev) => char_dev.read(buf).map_err(VfsError::DeviceError),
+            None => Err(VfsError::NotImplemented), // 不支持从块设备直接读文件接口
+        }
+    }
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, VfsError> {
+        match self.device.as_char_device() {
+            Some(char_dev) => char_dev.write(buf).map_err(VfsError::DeviceError),
+            None => Err(VfsError::NotImplemented), // 不支持写入块设备
+        }
+    }
+
+    fn seek(&self, _pos: u64) -> Result<u64, VfsError> {
+        // 设备文件通常不支持 seek
+        Err(VfsError::NotSupported)
+    }
+
+    fn stat(&self) -> Result<Metadata, VfsError> {
+        // 设备文件的元数据可能需要从设备驱动获取，这里返回一个默认值
+        Ok(create_metadata(VNodeType::Device, 0))
+    }
+
+    fn truncate(&mut self, _size: u64) -> Result<(), VfsError> {
+        // 设备文件不支持 truncate
+        Err(VfsError::NotSupported)
     }
 }
 
