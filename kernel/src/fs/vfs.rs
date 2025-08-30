@@ -114,6 +114,11 @@ pub trait VNode: Send + Sync {
     fn lookup(&self, name: &str) -> Result<Arc<dyn VNode>, VfsError>;
     /// 在当前目录下创建名为 `name` 的子节点。
     fn create(&self, name: &str, typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError>;
+    /// 在当前目录下创建名为 `name` 的符号链接，指向 `target_path`。
+    fn create_symlink(&self, name: &str, target_path: &str) -> Result<Arc<dyn VNode>, VfsError> {
+        let _ = (name, target_path);
+        Err(VfsError::NotImplemented)
+    }
     /// 删除当前目录下的子节点。
     fn remove(&self, name: &str) -> Result<(), VfsError> {
         let _ = name;
@@ -279,9 +284,7 @@ impl Vfs {
         if parent_vnode.node_type() != VNodeType::Dir {
             return Err(VfsError::NotADirectory);
         }
-        // TODO: 这里需要一个更完善的 `create` 方法，允许传递符号链接的目标路径
-        // 例如：parent_vnode.create_symlink(name, target_path)
-        parent_vnode.create(name, VNodeType::SymLink)
+        parent_vnode.create_symlink(name, target_path)
     }
 
     /// 内部辅助函数：根据路径查找VNode，并处理符号链接循环。

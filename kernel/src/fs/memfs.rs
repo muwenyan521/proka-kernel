@@ -2,7 +2,7 @@
 
 extern crate alloc;
 use crate::drivers::Device; // 假设 Device 类型在 crate::drivers 模块中
-use crate::fs::vfs::{File, FileSystem, Metadata, VNode, VNodeType, VfsError}; // 假设 VFS traits 在 crate::vfs 模块中
+use crate::fs::vfs::{File, FileSystem, Metadata, VNode, VNodeType, VfsError};
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -41,7 +41,7 @@ fn create_metadata(node_type: VNodeType, size: u64) -> Metadata {
 /// 表示 MemVNode 的实际内容（文件数据、目录条目或符号链接目标）
 pub enum MemNodeContent {
     File {
-        data: RwLock<Vec<u8>>, // 实际的文件数据，由 RwLock 保护
+        data: Arc<RwLock<Vec<u8>>>, // 实际的文件数据，由 Arc<RwLock> 保护
     },
     Dir {
         entries: RwLock<BTreeMap<String, Arc<MemVNode>>>, // 目录条目，映射文件名到子VNode
@@ -101,8 +101,8 @@ impl VNode for MemVNode {
                 // 对于文件类型，返回一个 MemFile 实例，它持有对本 VNode 及其数据的引用
                 Ok(Box::new(MemFile::new(
                     self.node_type,
-                    self.metadata.clone(),
-                    data.clone(),
+                    RwLock::new(self.metadata.read().clone()), // Fix E0599
+                    data.clone(),                 // Now clones the Arc
                 )))
             }
             _ => Err(VfsError::NotAFile), // 只有文件可以被打开进行读写
@@ -113,7 +113,11 @@ impl VNode for MemVNode {
         match &self.content {
             MemNodeContent::Dir { entries } => {
                 let entries_read = entries.read();
-                entries_read.get(name).cloned().ok_or(VfsError::NotFound)
+                entries_read
+                    .get(name)
+                    .cloned()
+                    .map(|node| node as Arc<dyn VNode>)
+                    .ok_or(VfsError::NotFound) // Fix E0308
             }
             _ => Err(VfsError::NotADirectory), // 只有目录可以进行查找操作
         }
@@ -131,7 +135,7 @@ impl VNode for MemVNode {
                     VNodeType::File => MemVNode::new(
                         VNodeType::File,
                         MemNodeContent::File {
-                            data: RwLock::new(Vec::new()),
+                            data: Arc::new(RwLock::new(Vec::new())),
                         },
                     ),
                     VNodeType::Dir => MemVNode::new(
@@ -141,14 +145,9 @@ impl VNode for MemVNode {
                         },
                     ),
                     VNodeType::SymLink => {
-                        // VNode::create trait 方法没有提供传递符号链接目标路径的机制。
-                        // 因此，通过这个通用接口创建符号链接是不可能的。
-                        // VFS 层的 `create_symlink` 方法需要一个更具体的 `VNode` 方法。
-                        // 暂时返回 NotImplemented。
                         return Err(VfsError::NotImplemented);
                     }
                     VNodeType::Device => {
-                        // MemFs 不负责创建设备节点，设备节点通常由 VFS 层与设备管理器交互创建。
                         return Err(VfsError::NotImplemented);
                     }
                 };
@@ -157,6 +156,27 @@ impl VNode for MemVNode {
                 Ok(new_node)
             }
             _ => Err(VfsError::NotADirectory), // 只有目录可以创建子节点
+        }
+    }
+
+    fn create_symlink(&self, name: &str, target_path: &str) -> Result<Arc<dyn VNode>, VfsError> {
+        match &self.content {
+            MemNodeContent::Dir { entries } => {
+                let mut entries_write = entries.write();
+                if entries_write.contains_key(name) {
+                    return Err(VfsError::AlreadyExists);
+                }
+                let new_node = MemVNode::new(
+                    VNodeType::SymLink,
+                    MemNodeContent::SymLink {
+                        target: target_path.to_string(),
+                    },
+                );
+                entries_write.insert(name.to_string(), new_node.clone());
+                self.update_mtime();
+                Ok(new_node)
+            }
+            _ => Err(VfsError::NotADirectory),
         }
     }
 
@@ -245,9 +265,10 @@ impl File for MemFile {
         let start_idx = *cursor as usize;
         let bytes_to_write = buf.len();
 
-        // 确保容量足够
+        // Fix E0502: Get data.len() before calling data.reserve
+        let current_data_vec_len = data.len();
         if start_idx + bytes_to_write > data.capacity() {
-            data.reserve(start_idx + bytes_to_write - data.len());
+            data.reserve(start_idx + bytes_to_write - current_data_vec_len);
         }
 
         // 如果写入位置超出当前文件大小，则扩展文件并用零填充
