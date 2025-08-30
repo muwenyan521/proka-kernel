@@ -115,6 +115,7 @@ pub trait CharDeviceOps: SharedDeviceOps {
     }
 }
 
+#[derive(Clone)]
 pub enum DeviceInner {
     Block(Arc<dyn BlockDeviceOps>),
     Char(Arc<dyn CharDeviceOps>),
@@ -244,6 +245,19 @@ impl core::fmt::Debug for Device {
             self.open_count.load(Ordering::SeqCst),
             self.is_registered
         )
+    }
+}
+
+impl Clone for Device {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            major: self.major,
+            minor: self.minor,
+            open_count: AtomicUsize::new(self.open_count.load(Ordering::SeqCst)),
+            is_registered: self.is_registered,
+            inner: self.inner.clone(),
+        }
     }
 }
 
