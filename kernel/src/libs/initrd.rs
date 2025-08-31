@@ -1,4 +1,3 @@
-// src/libs/initrd.rs
 extern crate alloc;
 use crate::fs::vfs::{VFS, VNodeType, VfsError};
 use alloc::format;
@@ -184,8 +183,7 @@ const CPIO_S_IFLNK: u32 = 0o120000; // Symbolic link
 ///
 /// # Returns
 /// A `Result` indicating success or a `VfsError` if any operation fails.
-pub fn load_initrd(initrd_data: &[u8]) -> Result<(), VfsError> {
-    info!("Loading initrd...");
+pub fn load_cpio(initrd_data: &[u8]) -> Result<(), VfsError> {
     let reader = CpioNewcReader::new(initrd_data);
     let vfs = VFS.lock(); // Lock VFS for the duration of initrd loading
 
@@ -243,7 +241,6 @@ pub fn load_initrd(initrd_data: &[u8]) -> Result<(), VfsError> {
                         }
                     }
                     Err(VfsError::NotFound) => {
-                        info!("Creating directory: {}", current_dir_segment);
                         vfs.create_dir(&current_dir_segment).map_err(|e| {
                             error!(
                                 "Failed to create directory {}: {:?}",
@@ -262,13 +259,7 @@ pub fn load_initrd(initrd_data: &[u8]) -> Result<(), VfsError> {
 
         // Now, handle the actual CPIO object based on its type
         match node_type_mode {
-            CPIO_S_IFDIR => {
-                // Directories are already handled by the loop above.
-                // If final_path is "/", it's already the VFS root.
-                info!("Processed directory: {}", final_path);
-            }
             CPIO_S_IFREG => {
-                info!("Creating file: {}", final_path);
                 let file_node = vfs.create_file(&final_path)?;
                 let mut file_handle = file_node.open()?;
                 file_handle.write(obj.data)?;
@@ -276,17 +267,29 @@ pub fn load_initrd(initrd_data: &[u8]) -> Result<(), VfsError> {
             CPIO_S_IFLNK => {
                 let target_path =
                     core::str::from_utf8(obj.data).map_err(|_| VfsError::InvalidArgument)?;
-                info!("Creating symlink: {} -> {}", final_path, target_path);
                 vfs.create_symlink(target_path, &final_path)?;
             }
-            _ => {
-                warn!(
-                    "Unsupported CPIO object type for {}: {:#o}",
-                    path, node_type_mode
-                );
-            }
+            _ => {}
         }
     }
-    info!("Finished loading initrd.");
     Ok(())
+}
+
+pub fn load_initrd() {
+    // Load initrd
+    if let Some(initrd_response) = crate::MODULE_REQUEST.get_response() {
+        if let Some(inir) = initrd_response.modules().first() {
+            unsafe {
+                let slice: &[u8] = core::slice::from_raw_parts(inir.addr(), inir.size() as usize);
+                match load_cpio(slice) {
+                    Ok(_) => info!("Initrd loaded successfully."),
+                    Err(e) => error!("Failed to load initrd: {:?}", e),
+                }
+            }
+        } else {
+            warn!("No initrd module found.");
+        }
+    } else {
+        warn!("Initrd module request failed.");
+    }
 }

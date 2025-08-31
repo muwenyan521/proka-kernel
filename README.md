@@ -1,66 +1,103 @@
 # Proka Kernel - A kernel for ProkaOS
-Copyright (C) RainSTR Studio 2025, All rights reserved.
 
-Welcome to use Proka Kernel, invented by RainSTR Studio, which is made up by young developers.
- 
-This project is for practise only, but we hope that it will use in stable environment.
+**Copyright (C) 2025 RainSTR Studio. All rights reserved.**
 
-## What language does it written?
-Well, if you have seen the *languages* part, you'll find **C, Assembly and Rust**. Yes, this is the language what does the Proka Kernel written.
+---
 
-You know, **Rust** is the memory-safe language, so the kernel mainly written in Rust. Also, for some low-level operation and drivers, we uses **C and Assembly** to do that.
+Welcome to Proka Kernel, an operating system kernel developed by young talents at RainSTR Studio.
+Primarily for learning and practice, our goal is to evolve it into a stable and reliable system.
 
-Also, you will find that it also have **Python**. But why? Can Python write kernels? Of course no, but as a interpreted language, it is a script that can run, debug or do something else easily.
+## Project Highlights
+*   **Hybrid Language Design**: Leverages Rust's memory safety and C's low-level control.
+*   **Modular Architecture**: Designed for clarity and extensibility.
+*   **Modern Development**: Uses advanced tools and practices for quality code.
+*   **Community-Driven**: Actively maintained by passionate developers.
 
-## How to build?
+## Languages Used
+
+Proka Kernel is primarily written in **C and Rust**.
+
+*   **Rust**: Forms the kernel's core, offering memory safety to enhance stability and security by preventing common errors. Most high-level logic and new features are in Rust.
+*   **C Language**: Utilized for direct hardware access, low-level operations (e.g., boot code, assembly interfaces), and integrating existing drivers.
+
+## How to Build Proka Kernel?
+
 ### Requirements
-Well, If you want to build this project, you need to install these components:
-- Rust (nightly, with target `x86_64-unknown-none`, the Rust compiler);
-- GCC* (The C code compiler);
-- NASM (The Assembly code compiler);
-- Make (The build tools of C and NASM codes).
 
-If you want to run it in your operating system, you also need to install these components:
-- QEMU (The kernel emulater);
-- xorriso (The ISO image builder)
+To build and run Proka Kernel, install these components:
 
-NOTE: The components with `*` means that it may pre-installed in your operating system.
+#### Core Build Tools
+*   **Rust Toolchain**: `nightly` channel with `x86_64-unknown-none` target (Rust `>= 1.77.0`).
+*   **GCC**: C language compiler.
+*   **Make**: Build automation tool.
 
-### Install commands
-We suggest you use `rustup` to install Rust.
+#### Runtime & Image Creation
+*   **QEMU**: For kernel emulation.
+*   **xorriso**: To create bootable ISO images.
+*   **cpio**: To create initrd (initial RAM disk) images.
 
-If you're using Debian or Ubuntu, you can try:
+**Note**: GCC might be pre-installed on your OS.
+
+### Installation Commands
+
+We recommend `rustup` for Rust management.
+
+#### Linux (Debian/Ubuntu)
+
 ```bash
-sudo apt-get install gcc nasm make     # Must install
-sudo apt-get install xorriso    # If you want to build the ISO image
-sudo apt-get install qemu-system-x86    # If you want to run the kernel in your OS (MUST RUN ALL COMMAND HERE!!)
+# Install Rust (via rustup)
+# curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# source $HOME/.cargo/env
+# rustup default nightly
+# rustup target add x86_64-unknown-none
+
+# Install core build tools
+sudo apt-get update
+sudo apt-get install -y gcc make
+
+# Install runtime and image creation tools
+sudo apt-get install -y xorriso cpio qemu-system-x86
 ```
 
-### Build
-To build it, you just need to run 1 command:
-```bash
-make
-```
+### Build Process
 
-The kernel file will put in `kernel/kernel` in project root.
+From the project root:
 
-Isn't it easy? If you want to make up an ISO, you just need to run:
-```bash
-make makeiso
-```
+1.  **Compile Kernel**:
+    ```bash
+    make
+    ```
+    Kernel file at `kernel/kernel`.
 
-The ISO file will put in `proka-kernel.iso` in project root.
+2.  **Build ISO Image**:
+    ```bash
+    make iso
+    ```
+    ISO file `proka-kernel.iso` in project root.
 
-If you want to start the emulation of the kernel by using QEMU, you just need to run:
-```bash
-make run  # Must run in project root!!!
-```
-
-Then the QEMU process will on. You can see the kernel log in the terminal.
+3.  **Run in QEMU**:
+    ```bash
+    make run
+    ```
+    QEMU will launch, displaying kernel output in the terminal.
 
 ## Contributors
-- zhangxuan2011 <zx20110412@outlook.com>
-- moyan <moyan@moyanjdc.top>
-- xiaokuai <rainyhowcool@outlook.com>
-- TMX <273761857@qq.com>
 
+Thank you to all contributors!
+
+*   **zhangxuan2011** <zx20110412@outlook.com>
+*   **moyan** <moyan@moyanjdc.top>
+*   **xiaokuai** <rainyhowcool@outlook.com>
+*   **TMX** <273761857@qq.com>
+
+### How to Contribute
+
+We welcome contributions: Bug reports, Pull Requests (features, fixes, optimizations), documentation improvements, and feedback.
+Refer to `CONTRIBUTING.md` for guidelines.
+
+## License
+
+Proka Kernel is distributed under the [**MIT License**](LICENSE).
+See `LICENSE` file for details.
+
+---

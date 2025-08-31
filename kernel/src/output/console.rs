@@ -101,6 +101,7 @@ pub struct Console<'a> {
     pub renderer: Renderer<'a>, // 渲染器
     font: FontRef<'static>,     // 字体
     scale: PxScale,             // 字体缩放比例
+    font_size: f32,             // 字体大小（pt）
 
     buffer: Vec<Vec<Option<ConsoleChar>>>, // 字符缓冲区
     scroll_offset_y: usize,                // 垂直滚动偏移量
@@ -130,61 +131,111 @@ pub struct Console<'a> {
 
 impl<'a> Console<'a> {
     pub fn new(renderer: Renderer<'a>, font: FontRef<'static>) -> Self {
-        let scale = font
-            .pt_to_px_scale(DEFAULT_FONT_SIZE)
+        let mut console = Self {
+            renderer,
+            font,
+            scale: PxScale::from(0.0), // 临时值，将在 init_font_metrics 中设置
+            font_size: DEFAULT_FONT_SIZE,
+            cursor_x: 0,
+            cursor_y: 0,
+            buffer: Vec::new(), // 临时值，将在 init_font_metrics 中设置
+            scroll_offset_y: 0,
+            width_chars: 0,  // 临时值
+            height_chars: 0, // 临时值
+            current_color: color::WHITE,
+            current_bg_color: color::BLACK,
+            default_color: color::WHITE,
+            default_bg_color: color::BLACK,
+            font_width: 0,      // 临时值
+            font_height: 0,     // 临时值
+            font_baseline: 0.0, // 临时值
+            dirty_regions: Vec::new(),
+            cursor_needs_redraw: true,
+            hidden_cursor: false,
+            ansi_parse_state: AnsiParseState::Normal,
+            prev_cursor_x: 0,
+            prev_cursor_y: 0,
+        };
+        console.init_font_metrics(DEFAULT_FONT_SIZE); // 初始化字体度量
+        console.buffer =
+            vec![vec![None; console.width_chars as usize]; console.height_chars as usize]; // 初始缓冲区
+        console
+    }
+
+    /// (新增) 根据当前字体和字体大小初始化/重新计算字体度量信息和缓冲区大小。
+    fn init_font_metrics(&mut self, font_size_pt: f32) {
+        self.font_size = font_size_pt;
+        self.scale = self
+            .font
+            .pt_to_px_scale(font_size_pt)
             .unwrap_or(PxScale::from(16.0));
-        let scaled_font = font.as_scaled(scale);
+        let scaled_font = self.font.as_scaled(self.scale);
 
         let ascent = scaled_font.ascent();
         let descent = scaled_font.descent();
         let line_gap = scaled_font.line_gap();
 
         let font_line_height = ascent - descent + line_gap;
-        let font_baseline = ascent;
+        self.font_baseline = ascent;
 
         // 获取'M'的字形边界来计算字符宽度
-        let g_id = font.glyph_id('M');
-        let g = g_id.with_scale(scale);
-        let bound = font.glyph_bounds(&g);
+        let g_id = self.font.glyph_id('M');
+        let g = g_id.with_scale(self.scale);
+        let bound = self.font.glyph_bounds(&g);
 
-        let font_width = ceilf(bound.width()) as u32;
-        let font_height = ceilf(font_line_height) as u32;
+        self.font_width = ceilf(bound.width()) as u32;
+        self.font_height = ceilf(font_line_height) as u32;
 
-        let width_chars = renderer.width().checked_div(font_width as u64).unwrap_or(1) as u32; // 计算宽度（字符数）
-        let height_chars = renderer
+        self.width_chars = self
+            .renderer
+            .width()
+            .checked_div(self.font_width as u64)
+            .unwrap_or(1) as u32;
+        self.height_chars = self
+            .renderer
             .height()
-            .checked_div(font_height as u64)
-            .unwrap_or(1) as u32; // 计算高度（字符数）
+            .checked_div(self.font_height as u64)
+            .unwrap_or(1) as u32;
 
-        let default_fg = color::WHITE;
-        let default_bg = color::BLACK;
+        // 重置光标位置
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+        self.prev_cursor_x = 0;
+        self.prev_cursor_y = 0;
+        self.scroll_offset_y = 0;
+    }
 
-        // 初始缓冲区可以只包含屏幕可见的行数
-        let initial_buffer = vec![vec![None; width_chars as usize]; height_chars as usize];
+    /// (新增) 修改字体和/或字体大小。
+    ///
+    /// `new_font_data`: 新字体的数据 (必须是 `'static`)。
+    /// `new_font_size`: 可选的新字体大小 (磅数)。如果为 `None`，则保持当前大小。
+    ///
+    /// **注意**: 更改字体或字体大小将导致整个屏幕清空并重新绘制。
+    pub fn set_font(&mut self, new_font_data: &'static [u8], new_font_size: Option<f32>) {
+        // 尝试加载新字体
+        match FontRef::try_from_slice(new_font_data) {
+            Ok(new_font) => {
+                self.font = new_font;
+                let size_to_use = new_font_size.unwrap_or(self.font_size);
+                self.init_font_metrics(size_to_use);
 
-        Self {
-            renderer,
-            font,
-            scale,
-            cursor_x: 0,
-            cursor_y: 0,
-            buffer: initial_buffer,
-            scroll_offset_y: 0, // 初始时没有滚动
-            width_chars,
-            height_chars,
-            current_color: default_fg,
-            current_bg_color: default_bg,
-            default_color: default_fg,    // 初始化默认颜色
-            default_bg_color: default_bg, // 初始化默认颜色
-            font_width,
-            font_height,
-            font_baseline,
-            dirty_regions: Vec::new(),
-            cursor_needs_redraw: true, // 初始时光标需要绘制
-            hidden_cursor: false,
-            ansi_parse_state: AnsiParseState::Normal, // 初始化 ANSI 解析状态
-            prev_cursor_x: 0,
-            prev_cursor_y: 0,
+                // 根据新的字符宽度和高度重置缓冲区
+                // 此时，需要清空旧缓冲区的内容，因为字符和布局都已改变
+                //self.buffer.clear();
+                //self.buffer =
+                //    vec![vec![None; self.width_chars as usize]; self.height_chars as usize];
+
+                // 标记整个屏幕为脏，需要完全重绘
+                self.dirty_regions.clear();
+                self.add_dirty_region(Rect::new(0, 0, self.width_chars, self.height_chars));
+                self.cursor_needs_redraw = true;
+
+                // 立即重绘以反映字体变化
+                self.draw_buffer_to_screen();
+            }
+            Err(_) => {
+                return;
+            }
         }
     }
 
@@ -233,7 +284,6 @@ impl<'a> Console<'a> {
         self.cursor_needs_redraw = true;
         self.draw_buffer_to_screen(); // 在`clear`后立即绘制以反映变化
     }
-
     /// 清空渲染器上的所有像素，以背景色填充
     #[allow(dead_code)]
     fn clear_screen_pixels(&mut self) {
@@ -400,6 +450,17 @@ impl<'a> Console<'a> {
                         char_info.fg,
                         char_info.bg,
                     );
+                } else {
+                    // 如果旧光标位置缓冲区为空，则用背景色填充
+                    self.renderer.fill_rect(
+                        Pixel::new(
+                            (prev_x * self.font_width) as u64,
+                            (prev_y * self.font_height) as u64,
+                        ),
+                        self.font_width as u64,
+                        self.font_height as u64,
+                        self.current_bg_color,
+                    );
                 }
             }
         }
@@ -470,8 +531,10 @@ impl<'a> Console<'a> {
                     continue; // 超出可见范围
                 }
 
+                // 检查缓冲区行是否存在，以防止索引越界
                 if let Some(row) = self.buffer.get(current_buf_row_idx) {
                     for screen_x_offset in actual_start_char_x..actual_end_char_x {
+                        // 检查缓冲区单元格是否存在
                         if let Some(Some(ConsoleChar { ch, fg, bg })) =
                             row.get(screen_x_offset as usize)
                         {
@@ -500,7 +563,8 @@ impl<'a> Console<'a> {
 
     /// 写入一个字符串到控制台
     pub fn write_string(&mut self, string: &str) {
-        let mut changed = false; // 标记是否有实际内容写入或光标移动
+        let mut changed_content = false; // 标记是否有实际内容写入
+        let mut cursor_moved = false; // 标记光标是否移动，包括换行、回车、tab
 
         for c in string.chars() {
             match self.ansi_parse_state {
@@ -514,11 +578,11 @@ impl<'a> Console<'a> {
                             self.cursor_x = 0;
                             self.cursor_y += 1;
                             self.ensure_buffer_capacity();
-                            changed = true;
+                            cursor_moved = true;
                         }
                         '\r' => {
                             self.cursor_x = 0;
-                            changed = true;
+                            cursor_moved = true;
                         }
                         '\t' => {
                             let mut spaces_to_add =
@@ -535,7 +599,8 @@ impl<'a> Console<'a> {
                                     self.ensure_buffer_capacity();
                                 }
                             }
-                            changed = true;
+                            changed_content = true;
+                            cursor_moved = true;
                         }
                         _ => {
                             self.put_char(c);
@@ -545,7 +610,8 @@ impl<'a> Console<'a> {
                                 self.cursor_y += 1;
                                 self.ensure_buffer_capacity();
                             }
-                            changed = true;
+                            changed_content = true;
+                            cursor_moved = true;
                         }
                     }
                 }
@@ -557,11 +623,7 @@ impl<'a> Console<'a> {
                         }
                         _ => {
                             // Not a CSI sequence, treat ESC and the char as literals or ignore
-                            // For simplicity, we'll just ignore the malformed sequence for now
                             self.ansi_parse_state = AnsiParseState::Normal;
-                            // Optionally, output ESC and c as normal chars:
-                            // self.put_char('\x1b');
-                            // self.put_char(c);
                         }
                     }
                 }
@@ -574,7 +636,7 @@ impl<'a> Console<'a> {
                         // No parameters, just ESC[m (reset)
                         self.apply_ansi_codes(&[0]); // Apply default reset
                         self.ansi_parse_state = AnsiParseState::Normal;
-                        changed = true;
+                        changed_content = true; // 颜色变化也算作内容变化
                     } else {
                         // Malformed CSI sequence (e.g., ESC[A for cursor up, not supported yet)
                         self.ansi_parse_state = AnsiParseState::Normal;
@@ -591,7 +653,7 @@ impl<'a> Console<'a> {
                             .collect();
                         self.apply_ansi_codes(&codes);
                         self.ansi_parse_state = AnsiParseState::Normal;
-                        changed = true;
+                        changed_content = true; // 颜色变化也算作内容变化
                     } else {
                         // Malformed or unsupported sequence, reset state
                         self.ansi_parse_state = AnsiParseState::Normal;
@@ -599,20 +661,21 @@ impl<'a> Console<'a> {
                 }
             }
         }
+
+        // 如果光标移动了，将旧的光标位置标记为脏区域，以确保它被重绘（从而清除光标块）
         if self.cursor_x != self.prev_cursor_x || self.cursor_y != self.prev_cursor_y {
-            // 如果光标移动了，将旧的光标位置标记为脏区域，以确保它被重绘（从而清除光标块）
-            self.add_dirty_region(Rect::new(self.prev_cursor_x, self.prev_cursor_y, 1, 1));
-            changed = true; // 确保即使只移动光标也触发重绘
+            // 仅当旧光标位置在屏幕内时才标记它为脏
+            if self.prev_cursor_y < self.height_chars {
+                self.add_dirty_region(Rect::new(self.prev_cursor_x, self.prev_cursor_y, 1, 1));
+            }
+            cursor_moved = true;
         }
 
         // 标记新的光标位置需要重绘
         self.cursor_needs_redraw = true;
 
-        // 如果光标位置发生变化 (表示内容已经写入)，则触发一次渲染
-        if changed {
-            self.draw_buffer_to_screen();
-        } else if !self.dirty_regions.is_empty() {
-            // 如果光标没动，但有脏区域，也刷新
+        // 如果内容有变化或光标移动了，或者有脏区域，则触发一次渲染
+        if changed_content || cursor_moved || !self.dirty_regions.is_empty() {
             self.draw_buffer_to_screen();
         } else {
             // 啥也没变，但可能光标需要闪烁，所以还是要刷新

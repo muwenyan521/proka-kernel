@@ -21,10 +21,13 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-use log::{error, info, warn};
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use log::{debug, error, info};
 use proka_kernel::BASE_REVISION;
 use proka_kernel::drivers::init_devices;
-use proka_kernel::fs::vfs::VFS; // Added VFS import to check content
+use proka_kernel::fs::vfs::VFS;
+use proka_kernel::output::console::{CONSOLE, DEFAULT_FONT_SIZE};
 /* C functions extern area */
 extern_safe! {
     fn add(a: i32, b: i32) -> i32;
@@ -43,6 +46,31 @@ pub extern "C" fn kernel_main() -> ! {
     proka_kernel::output::console::CONSOLE
         .lock()
         .cursor_hidden();
+
+    proka_kernel::libs::initrd::load_initrd();
+    let files = VFS.lock().read_dir("/").unwrap();
+    debug!("Files in /initrd: {:?}", files);
+    let initrd_font = VFS.lock().open("/initrd/font.ttf");
+    let data = match initrd_font {
+        Ok(file) => {
+            let mut data = Vec::new();
+            file.read(&mut data).unwrap();
+            debug!("Font data: ");
+            Some(data)
+        }
+        Err(e) => {
+            debug!("Failed to open /initrd/font.ttf: {:?}", e);
+            None
+        }
+    };
+    if let Some(data) = data {
+        debug!("Loaded font.ttf");
+        let static_data = Box::leak(data.into_boxed_slice());
+        CONSOLE
+            .lock()
+            .set_font(static_data, Some(DEFAULT_FONT_SIZE));
+        debug!("Set font");
+    }
 
     println!("Starting ProkaOS v{}...", env!("CARGO_PKG_VERSION")); // Print welcome message
 
@@ -63,36 +91,6 @@ pub extern "C" fn kernel_main() -> ! {
         .iter()
     {
         println!("{:?}", device);
-    }
-
-    // Load initrd
-    if let Some(initrd_response) = proka_kernel::MODULE_REQUEST.get_response() {
-        if let Some(inir) = initrd_response.modules().first() {
-            unsafe {
-                let slice: &[u8] = core::slice::from_raw_parts(inir.addr(), inir.size() as usize);
-                match proka_kernel::libs::initrd::load_initrd(slice) {
-                    Ok(_) => info!("Initrd loaded successfully."),
-                    Err(e) => error!("Failed to load initrd: {:?}", e),
-                }
-            }
-        } else {
-            warn!("No initrd module found.");
-        }
-    } else {
-        warn!("Initrd module request failed.");
-    }
-    match VFS.lock().walk("/") {
-        Ok(results) => {
-            println!("VFS walk results for '/':");
-            for (dirpath, dirnames, filenames) in results {
-                println!("  Path: {}", dirpath);
-                println!("    Dirs: {:?}", dirnames);
-                println!("    Files: {:?}", filenames);
-            }
-        }
-        Err(e) => {
-            error!("Error during VFS walk: {:?}", e);
-        }
     }
 
     loop {
