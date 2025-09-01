@@ -1,8 +1,10 @@
+use crate::interrupts::pic::{PICS, PIC_1_OFFSET};
+use crate::println;
 use crate::serial_println;
 use x86_64::{
-    VirtAddr,
     registers::control::Cr2,
     structures::idt::{InterruptStackFrame, PageFaultErrorCode},
+    VirtAddr,
 };
 
 macro_rules! exception_handler {
@@ -99,3 +101,36 @@ fn hlt_loop() -> ! {
         x86_64::instructions::hlt();
     }
 }
+
+macro_rules! pic_interrupt_handler {
+    ($name:ident, $irq_number:expr) => {
+        pub extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame) {
+            // 在这里处理特定 IRQ 的逻辑
+            // 例如：如果是键盘中断 (IRQ1)，读取键盘数据
+            serial_println!("IRQ {} received!", $irq_number); // 可以用于调试
+            unsafe {
+                PICS.lock()
+                    .notify_end_of_interrupt(PIC_1_OFFSET + $irq_number);
+            }
+            // 不要在此处调用 hlt_loop，因为中断是希望能够返回的。
+            // 当中断处理返回时，CPU会从中断帧恢复执行。
+        }
+    };
+}
+// 为所有 16 个 IRQ 定义处理函数
+pic_interrupt_handler!(pic_interrupt_handler_0, 0); // 时钟中断 Timer
+pic_interrupt_handler!(pic_interrupt_handler_1, 1); // 键盘中断 Keyboard
+pic_interrupt_handler!(pic_interrupt_handler_2, 2); // 级联到 PIC2
+pic_interrupt_handler!(pic_interrupt_handler_3, 3); // 串口 COM2
+pic_interrupt_handler!(pic_interrupt_handler_4, 4); // 串口 COM1
+pic_interrupt_handler!(pic_interrupt_handler_5, 5); // 并口 LPT2 / 声卡
+pic_interrupt_handler!(pic_interrupt_handler_6, 6); // 软盘控制器 Floppy Disk
+pic_interrupt_handler!(pic_interrupt_handler_7, 7); // 并口 LPT1 / 伪中断
+pic_interrupt_handler!(pic_interrupt_handler_8, 8); // RTC Real Time Clock
+pic_interrupt_handler!(pic_interrupt_handler_9, 9); // 重定向 IRQ2
+pic_interrupt_handler!(pic_interrupt_handler_10, 10); // 空闲 / SCSI / 网卡
+pic_interrupt_handler!(pic_interrupt_handler_11, 11); // 空闲 / SCSI / 网卡
+pic_interrupt_handler!(pic_interrupt_handler_12, 12); // PS/2 鼠标
+pic_interrupt_handler!(pic_interrupt_handler_13, 13); // FPU / 协处理器
+pic_interrupt_handler!(pic_interrupt_handler_14, 14); // 主 IDE Primary IDE
+pic_interrupt_handler!(pic_interrupt_handler_15, 15); // 次 IDE Secondary IDE
