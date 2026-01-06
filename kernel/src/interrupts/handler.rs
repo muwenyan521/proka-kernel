@@ -1,5 +1,5 @@
+#[allow(unused)]
 use crate::interrupts::pic::{PICS, PIC_1_OFFSET};
-use crate::println;
 use crate::serial_println;
 use x86_64::{
     registers::control::Cr2,
@@ -104,6 +104,7 @@ fn hlt_loop() -> ! {
 
 macro_rules! pic_interrupt_handler {
     ($name:ident, $irq_number:expr) => {
+        #[allow(unused_variables)]
         pub extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame) {
             // 在这里处理特定 IRQ 的逻辑
             // 例如：如果是键盘中断 (IRQ1)，读取键盘数据

@@ -1,4 +1,4 @@
-use crate::drivers::{DEVICE_MANAGER, Device, DeviceError};
+use crate::drivers::{Device, DeviceError, DEVICE_MANAGER};
 extern crate alloc;
 use super::memfs::MemFs;
 use alloc::format;

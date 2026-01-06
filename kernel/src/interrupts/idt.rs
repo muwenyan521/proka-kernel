@@ -1,8 +1,8 @@
 use crate::interrupts::gdt;
 use crate::interrupts::handler;
-use crate::interrupts::pic::{PICS, PIC_1_OFFSET, PIC_2_OFFSET}; // 导入 PIC 相关常量和全局 PICS
+use crate::interrupts::pic::{PIC_1_OFFSET, PIC_2_OFFSET}; // 导入 PIC 相关常量和全局 PICS
 use lazy_static::lazy_static;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
+use x86_64::structures::idt::InterruptDescriptorTable;
 // 定义 PIC 相关的中断向量数量
 #[allow(dead_code)]
 pub const PICS_EVT_COUNT: u8 = 16; // IRQ0到IRQ15，共16个中断

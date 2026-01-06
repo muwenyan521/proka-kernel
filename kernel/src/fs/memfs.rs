@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::drivers::{DEVICE_MANAGER, Device}; // 假设 Device, DeviceError 类型在 crate::drivers 模块中，并引入 DEVICE_MANAGER
+use crate::drivers::{Device, DEVICE_MANAGER}; // 假设 Device, DeviceError 类型在 crate::drivers 模块中，并引入 DEVICE_MANAGER
 use crate::fs::vfs::{File, FileSystem, Metadata, VNode, VNodeType, VfsError};
 use alloc::{
     boxed::Box,

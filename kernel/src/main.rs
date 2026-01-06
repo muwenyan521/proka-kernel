@@ -21,7 +21,7 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-use log::{debug, error, info};
+use log::info;
 use proka_kernel::drivers::init_devices;
 use proka_kernel::BASE_REVISION;
 /* C functions extern area */
@@ -37,19 +37,20 @@ pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
-    // 初始化内存管理（必须在 logger 初始化之前，因为 logger 的输出需要堆）
+    // 初始化内存管理
     let memory_map_response = proka_kernel::MEMORY_MAP_REQUEST
         .get_response()
         .expect("Failed to get memory map response");
 
     let hhdm_offset = proka_kernel::memory::paging::get_hhdm_offset();
     let mut mapper = unsafe { proka_kernel::memory::paging::init_offset_page_table(hhdm_offset) };
-    let mut frame_allocator = unsafe { proka_kernel::memory::paging::BootInfoFrameAllocator::new(memory_map_response) };
+    let mut frame_allocator =
+        unsafe { proka_kernel::memory::paging::BootInfoFrameAllocator::new(memory_map_response) };
 
     proka_kernel::memory::allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("Failed to initialize heap");
 
-    //init_devices();
+    init_devices();
     proka_kernel::libs::logger::init_logger(); // Init log system
 
     proka_kernel::output::console::CONSOLE

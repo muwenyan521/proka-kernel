@@ -20,7 +20,9 @@ impl PixelCoord for Pixel {
 
 #[macro_export]
 macro_rules! pixel {
-    ($x:expr, $y:expr) => {{ Pixel::new(($x) as u64, ($y) as u64) }};
+    ($x:expr, $y:expr) => {{
+        Pixel::new(($x) as u64, ($y) as u64)
+    }};
 }
 
 pub struct Renderer<'a> {

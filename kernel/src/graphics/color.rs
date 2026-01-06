@@ -96,5 +96,5 @@ pub const BLUE: Color = color!(0, 0, 255);
 pub const YELLOW: Color = color!(255, 255, 0); // 红+绿
 pub const CYAN: Color = color!(0, 255, 255); // 绿+蓝
 pub const MAGENTA: Color = color!(255, 0, 255); // 红+蓝
-// 中性色
+                                                // 中性色
 pub const GRAY: Color = color!(128, 128, 128);

@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::fs::vfs::{VFS, VNodeType, VfsError};
+use crate::fs::vfs::{VNodeType, VfsError, VFS};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;

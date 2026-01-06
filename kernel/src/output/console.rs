@@ -1,11 +1,11 @@
 extern crate alloc;
 use crate::color;
 use crate::{
-    FRAMEBUFFER_REQUEST,
     graphics::{
-        Pixel, Renderer,
         color::{self, Color},
+        Pixel, Renderer,
     },
+    FRAMEBUFFER_REQUEST,
 };
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use alloc::{string::String, vec, vec::Vec};
