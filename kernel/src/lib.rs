@@ -21,9 +21,9 @@ pub mod panic;
 pub mod test;
 
 use limine::{
-    BaseRevision,
     modules::InternalModule,
     request::{FramebufferRequest, MemoryMapRequest, ModuleRequest},
+    BaseRevision,
 };
 
 /* The section data define area */
@@ -40,6 +40,10 @@ pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 #[unsafe(link_section = ".requests")]
 #[used]
 pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+
+#[unsafe(link_section = ".requests")]
+#[used]
+pub static HHDM_REQUEST: limine::request::HhdmRequest = limine::request::HhdmRequest::new();
 
 #[unsafe(link_section = ".requests")]
 #[used]

@@ -37,12 +37,27 @@ pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
+    // 初始化内存管理（必须在 logger 初始化之前，因为 logger 的输出需要堆）
+    let memory_map_response = proka_kernel::MEMORY_MAP_REQUEST
+        .get_response()
+        .expect("Failed to get memory map response");
+
+    let hhdm_offset = proka_kernel::memory::paging::get_hhdm_offset();
+    let mut mapper = unsafe { proka_kernel::memory::paging::init_offset_page_table(hhdm_offset) };
+    let mut frame_allocator = unsafe { proka_kernel::memory::paging::BootInfoFrameAllocator::new(memory_map_response) };
+
+    proka_kernel::memory::allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("Failed to initialize heap");
+
     //init_devices();
     proka_kernel::libs::logger::init_logger(); // Init log system
 
     proka_kernel::output::console::CONSOLE
         .lock()
         .cursor_hidden();
+
+    info!("Heap initialized");
+    info!("Paging initialized");
 
     proka_kernel::libs::initrd::load_initrd();
 
@@ -54,8 +69,6 @@ pub extern "C" fn kernel_main() -> ! {
     proka_kernel::interrupts::pic::init();
     info!("PIC initialized");
     x86_64::instructions::interrupts::enable();
-
-    //proka_kernel::memory::paging::table::init_page_table();
 
     println!("Device list:");
     for device in proka_kernel::drivers::DEVICE_MANAGER

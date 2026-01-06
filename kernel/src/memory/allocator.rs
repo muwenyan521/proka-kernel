@@ -1,42 +1,60 @@
-//! # Proka Kernel - A kernel for ProkaOS
-//! Copyright (C) RainSTR Studio 2025, All rights reserved.
+//! Heap allocator module
 //!
-//! This file contains the idea of alllocating the heap memory
-//! and the global allocator.
-/* Modules use area */
-use core::alloc::{GlobalAlloc, Layout};
+//! This module implements the heap allocator for the kernel.
+//! It uses the `linked_list_allocator` crate to manage heap memory.
+
 use linked_list_allocator::LockedHeap;
-use spin::Mutex;
+use x86_64::{
+    structures::paging::{
+        mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB,
+    },
+    VirtAddr,
+};
 
-/* First, declare the heap's start and size */
-/// The beginning address of the heap.
-const HEAP_START: usize = 0x105000;
+/// The starting virtual address of the heap
+pub const HEAP_START: usize = 0x_4444_4444_0000;
+/// The size of the heap in bytes (8 MiB)
+pub const HEAP_SIZE: usize = 8 * 1024 * 1024;
 
-/// The size of the heap.
-const HEAP_SIZE: usize = 64 * 1024 * 1024; // 64M available
-
-/* Then, declare an global allocator */
 #[global_allocator]
-static ALLOCATOR: LocalHeapAllocator = LocalHeapAllocator(Mutex::new(LockedHeap::empty()));
+static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-/* The local heap allocator */
-struct LocalHeapAllocator(Mutex<LockedHeap>);
+/// Initialize the heap
+///
+/// This function maps the heap memory region and initializes the global allocator.
+///
+/// # Arguments
+/// * `mapper` - The page table mapper
+/// * `frame_allocator` - The frame allocator
+///
+/// # Returns
+/// * `Ok(())` on success
+/// * `Err(MapToError)` on failure
+pub fn init_heap(
+    mapper: &mut impl Mapper<Size4KiB>,
+    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+) -> Result<(), MapToError<Size4KiB>> {
+    let page_range = {
+        let heap_start = VirtAddr::new(HEAP_START as u64);
+        let heap_end = heap_start + HEAP_SIZE as u64 - 1u64;
+        let heap_start_page = Page::containing_address(heap_start);
+        let heap_end_page = Page::containing_address(heap_end);
+        Page::range_inclusive(heap_start_page, heap_end_page)
+    };
 
-/* The initializer of the memory */
-pub fn init_heap() {
+    for page in page_range {
+        let frame = frame_allocator
+            .allocate_frame()
+            .ok_or(MapToError::FrameAllocationFailed)?;
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        unsafe {
+            mapper.map_to(page, frame, flags, frame_allocator)?.flush();
+        }
+    }
+
     unsafe {
-        // Initialize locked heap
-        let mut guard = ALLOCATOR.0.lock(); // Get lock
-        *guard = LockedHeap::new(HEAP_START as *mut u8, HEAP_SIZE);
-    }
-}
-
-unsafe impl GlobalAlloc for LocalHeapAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        unsafe { self.0.lock().alloc(layout) }
+        ALLOCATOR.lock().init(HEAP_START as *mut u8, HEAP_SIZE);
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        unsafe { self.0.lock().dealloc(ptr, layout) }
-    }
+    Ok(())
 }
