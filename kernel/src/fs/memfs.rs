@@ -27,12 +27,12 @@ fn create_metadata(node_type: VNodeType, size: u64) -> Metadata {
     Metadata {
         size,
         permissions,
-        uid: 0,                     // 默认用户ID (root)
-        gid: 0,                     // 默认组ID (root)
-        ctime: 0,                   // 要求所有时间字段为 0
-        mtime: 0,                   // 要求所有时间字段为 0
-        blocks: (size + 511) / 512, // 假设块大小为 512 字节
-        nlinks: 1,                  // 默认硬链接数为 1
+        uid: 0,                          // 默认用户ID (root)
+        gid: 0,                          // 默认组ID (root)
+        ctime: 0,                        // 要求所有时间字段为 0
+        mtime: 0,                        // 要求所有时间字段为 0
+        blocks: size.div_ceil(512),       // 假设块大小为 512 字节
+        nlinks: 1,                       // 默认硬链接数为 1
     }
 }
 
@@ -85,10 +85,67 @@ impl MemVNode {
     fn update_mtime(&self) {
         // self.metadata.write().mtime = get_current_time(); // 如果有实时时钟，我们会在这里更新
     }
+
+    /// 将子节点从一个目录移动到另一个目录。
+    /// 这是 MemFs 特有的实现，用于支持跨目录移动。
+    pub fn move_node(
+        source_parent: &Self,
+        target_parent: &Self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<(), VfsError> {
+        // 获取源目录的条目
+        let source_entries = match &source_parent.content {
+            MemNodeContent::Dir { entries } => entries,
+            _ => return Err(VfsError::NotADirectory),
+        };
+
+        // 获取目标目录的条目
+        let target_entries = match &target_parent.content {
+            MemNodeContent::Dir { entries } => entries,
+            _ => return Err(VfsError::NotADirectory),
+        };
+
+        // 检查旧名称在源目录中是否存在
+        let node_to_move = {
+            let source_read = source_entries.read();
+            source_read.get(old_name).ok_or(VfsError::NotFound)?.clone()
+        };
+
+        // 检查新名称在目标目录中是否已存在
+        {
+            let target_read = target_entries.read();
+            if target_read.contains_key(new_name) {
+                return Err(VfsError::AlreadyExists);
+            }
+        }
+
+        // 从源目录移除
+        {
+            let mut source_write = source_entries.write();
+            source_write.remove(old_name);
+        }
+
+        // 添加到目标目录
+        {
+            let mut target_write = target_entries.write();
+            target_write.insert(new_name.to_string(), node_to_move);
+        }
+
+        // 更新两个父目录的修改时间
+        source_parent.update_mtime();
+        target_parent.update_mtime();
+
+        Ok(())
+    }
 }
 
 /// 实现 VNode trait，定义了文件系统节点的核心行为
 impl VNode for MemVNode {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+
     fn node_type(&self) -> VNodeType {
         self.node_type
     }
@@ -262,6 +319,38 @@ impl VNode for MemVNode {
         }
     }
 
+    fn rename(&self, old_name: &str, new_name: &str) -> Result<(), VfsError> {
+        match &self.content {
+            MemNodeContent::Dir { entries } => {
+                let mut entries_write = entries.write();
+
+                // 检查旧名称是否存在
+                if !entries_write.contains_key(old_name) {
+                    return Err(VfsError::NotFound);
+                }
+
+                // 检查新名称是否已存在
+                if entries_write.contains_key(new_name) {
+                    return Err(VfsError::AlreadyExists);
+                }
+
+                // 获取要重命名的节点
+                let node = entries_write
+                    .get(old_name)
+                    .ok_or(VfsError::NotFound)?
+                    .clone();
+
+                // 移除旧名称，插入新名称
+                entries_write.remove(old_name);
+                entries_write.insert(new_name.to_string(), node);
+
+                self.update_mtime(); // 父目录的修改时间变化
+                Ok(())
+            }
+            _ => Err(VfsError::NotADirectory), // 只有目录可以重命名子节点
+        }
+    }
+
     fn read_symlink(&self) -> Result<String, VfsError> {
         match &self.content {
             MemNodeContent::SymLink { target } => Ok(target.clone()),
@@ -304,7 +393,7 @@ impl MemFile {
     fn update_metadata(&self, new_size: u64) {
         let mut metadata_write = self.metadata.write();
         metadata_write.size = new_size;
-        metadata_write.blocks = (new_size + 511) / 512;
+        metadata_write.blocks = new_size.div_ceil(512);
         // metadata_write.mtime = get_current_time(); // 根据要求，mtime 保持为 0
     }
 }
@@ -362,7 +451,7 @@ impl File for MemFile {
         let current_data_len = self.data_ref.read().len() as u64;
         if metadata_write.size != current_data_len {
             metadata_write.size = current_data_len;
-            metadata_write.blocks = (current_data_len + 511) / 512;
+            metadata_write.blocks = current_data_len.div_ceil(512);
             // metadata_write.mtime = get_current_time(); // 如果有实时时钟，这里会更新
         }
         Ok(metadata_write.clone())

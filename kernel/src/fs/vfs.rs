@@ -106,7 +106,9 @@ pub trait FileSystem: Send + Sync {
 }
 
 /// 虚拟文件系统节点接口 (文件、目录、符号链接、设备)
-pub trait VNode: Send + Sync {
+pub trait VNode: Send + Sync + core::any::Any {
+    /// 尝试将 VNode 转换为具体类型
+    fn as_any(&self) -> &dyn core::any::Any;
     /// 返回节点的类型。
     fn node_type(&self) -> VNodeType;
     /// 获取节点的元数据。
@@ -142,6 +144,13 @@ pub trait VNode: Send + Sync {
     /// 删除当前目录下的子节点。
     fn remove(&self, name: &str) -> Result<(), VfsError> {
         let _ = name;
+        Err(VfsError::NotImplemented)
+    }
+
+    /// 在当前目录下重命名子节点。
+    /// 旧名 -> 新名。
+    fn rename(&self, old_name: &str, new_name: &str) -> Result<(), VfsError> {
+        let _ = (old_name, new_name);
         Err(VfsError::NotImplemented)
     }
     /// 读取符号链接的目标路径。只对 `VNodeType::SymLink` 类型有效。
@@ -345,11 +354,59 @@ impl Vfs {
         vnode.read_dir()
     }
 
-    /// (可选) 重命名或移动一个文件/目录 (mv old_path new_path)
-    pub fn rename_move(&self, _old_path: &str, _new_path: &str) -> Result<(), VfsError> {
-        // TODO: 实现重命名和移动。这通常需要在一个文件系统内部进行，
-        // 或者跨文件系统进行时涉及复制和删除。
-        Err(VfsError::NotImplemented)
+    /// 重命名或移动一个文件/目录 (mv old_path new_path)
+    ///
+    /// 支持：
+    /// - 同一目录内重命名：mv /oldname /newname
+    /// - 移动到不同目录：mv /dir1/oldname /dir2/newname
+    /// - 同一目录内移动并重命名：mv /dir1/oldname /dir1/newname
+    ///
+    /// 当前实现：
+    /// - MemFs 内支持同目录重命名和跨目录移动
+    /// - 跨文件系统移动需要复制和删除，暂未实现
+    pub fn rename_move(&self, old_path: &str, new_path: &str) -> Result<(), VfsError> {
+        // 解析源路径
+        let (old_parent_path, old_name) = self.split_path(old_path)?;
+        let old_parent = self.lookup(old_parent_path)?;
+
+        // 解析目标路径
+        let (new_parent_path, new_name) = self.split_path(new_path)?;
+        let new_parent = self.lookup(new_parent_path)?;
+
+        // 检查源节点是否存在
+        if old_parent.lookup(old_name).is_err() {
+            return Err(VfsError::NotFound);
+        }
+
+        // 检查目标节点是否已存在
+        if new_parent.lookup(new_name).is_ok() {
+            return Err(VfsError::AlreadyExists);
+        }
+
+        // 检查源和目标是否在同一个目录
+        if old_parent_path == new_parent_path {
+            // 同一目录内，直接重命名
+            old_parent.rename(old_name, new_name)
+        } else {
+            // 不同目录，需要移动
+            // 尝试使用 MemFs 的 move_node 方法
+            if let (Some(old_mem_parent), Some(new_mem_parent)) = (
+                old_parent.as_any().downcast_ref::<super::memfs::MemVNode>(),
+                new_parent.as_any().downcast_ref::<super::memfs::MemVNode>(),
+            ) {
+                // 都是 MemVNode，可以移动
+                super::memfs::MemVNode::move_node(
+                    old_mem_parent,
+                    new_mem_parent,
+                    old_name,
+                    new_name,
+                )
+            } else {
+                // 不是 MemFs，或者一个是 MemFs 一个不是
+                // 跨文件系统移动需要复制和删除，暂未实现
+                Err(VfsError::NotImplemented)
+            }
+        }
     }
 
     /// 内部辅助函数：根据路径查找VNode，并处理符号链接循环。
@@ -360,7 +417,10 @@ impl Vfs {
             return Err(VfsError::MaxSymlinkDepth);
         }
 
-        let path = path.trim_matches('/');
+        // 规范化路径，处理 `.` 和 `..`
+        let normalized_path = self.normalize_path(path);
+        let path = normalized_path.trim_matches('/');
+
         if path.is_empty() {
             return Ok(self.root.clone()); // 根目录
         }
@@ -385,11 +445,7 @@ impl Vfs {
                 if component.is_empty() || component == "." {
                     continue;
                 }
-                if component == ".." {
-                    // TODO: 处理 .. (需要获取父节点，这在VNode trait中未定义)
-                    // 目前简单地跳过，实际需要向上遍历
-                    return Err(VfsError::NotImplemented);
-                }
+                // 注意：由于已经调用了 normalize_path，这里不会再遇到 ".."
                 current = self.resolve_symlink_if_needed(current.lookup(component)?, depth)?;
             }
             return Ok(current);
@@ -401,10 +457,7 @@ impl Vfs {
             if component.is_empty() || component == "." {
                 continue;
             }
-            if component == ".." {
-                // TODO: 处理 ..
-                return Err(VfsError::NotImplemented);
-            }
+            // 注意：由于已经调用了 normalize_path，这里不会再遇到 ".."
             current = self.resolve_symlink_if_needed(current.lookup(component)?, depth)?;
         }
         Ok(current)
