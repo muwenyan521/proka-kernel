@@ -9,3 +9,6 @@ iso/*
 
 # Ignore the kernel binary
 kernel/proka-kernel
+
+
+AGENTS.md
