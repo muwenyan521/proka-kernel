@@ -20,6 +20,14 @@ pub mod output;
 pub mod panic;
 pub mod test;
 
+// Re-export common memory management types and functions
+pub use memory::frame_allocator::{format_bytes, FrameStats, LockedFrameAllocator};
+pub use memory::paging::{
+    get_hhdm_offset, get_memory_stats, init_frame_allocator, init_offset_page_table,
+    print_memory_stats,
+};
+pub use memory::protection::{kernel_flags, user_flags, Protection};
+
 use limine::{
     modules::InternalModule,
     request::{FramebufferRequest, MemoryMapRequest, ModuleRequest},

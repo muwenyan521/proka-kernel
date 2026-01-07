@@ -4,16 +4,16 @@
 //! This module provides paging support, including:
 //! - HHDM (Higher Half Direct Map) offset retrieval
 //! - OffsetPageTable initialization
-//! - Frame allocator based on bootloader memory map
-//! - Heap initialization
+//! - Bitmap-based frame allocator with deallocation support
+//! - Memory statistics and protection utilities
 
 extern crate alloc;
-use limine::memory_map::EntryType;
+use crate::memory::frame_allocator::{format_bytes, FrameStats, LockedFrameAllocator};
 use limine::response::MemoryMapResponse;
 use x86_64::{
     registers::control::Cr3,
-    structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB},
-    PhysAddr, VirtAddr,
+    structures::paging::{OffsetPageTable, PageTable},
+    VirtAddr,
 };
 
 /// Retrieve the HHDM (Higher Half Direct Map) offset from Limine
@@ -60,46 +60,46 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
     unsafe { &mut *page_table_ptr }
 }
 
-/// A FrameAllocator that returns usable frames from Limine bootloader memory map.
-pub struct BootInfoFrameAllocator {
-    memory_map: &'static MemoryMapResponse,
-    next: usize,
+/// Create a buddy system based frame allocator with deallocation support
+///
+/// # Arguments
+/// * `memory_map` - The memory map from Limine bootloader
+///
+/// # Safety
+/// This function is unsafe because the caller must guarantee that:
+/// - The passed memory map is valid
+/// - All frames marked as `USABLE` in it are really unused
+pub unsafe fn init_frame_allocator(memory_map: &'static MemoryMapResponse) -> LockedFrameAllocator {
+    LockedFrameAllocator::init(memory_map)
 }
 
-impl BootInfoFrameAllocator {
-    /// Create a FrameAllocator from the passed memory map.
-    ///
-    /// # Safety
-    /// This function is unsafe because the caller must guarantee that:
-    /// - The passed memory map is valid
-    /// - All frames marked as `USABLE` in it are really unused
-    pub unsafe fn new(memory_map: &'static MemoryMapResponse) -> Self {
-        BootInfoFrameAllocator {
-            memory_map,
-            next: 0,
-        }
-    }
+/// Print memory statistics
+///
+/// # Arguments
+/// * `frame_allocator` - The frame allocator to query
+pub fn print_memory_stats(frame_allocator: &LockedFrameAllocator) {
+    let stats = frame_allocator.stats();
 
-    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
-        let regions = self.memory_map.entries();
-        let usable_regions = regions.iter().filter(|r| r.entry_type == EntryType::USABLE);
-
-        let addr_ranges = usable_regions.map(|r| {
-            let start = r.base as usize;
-            let end = (r.base + r.length) as usize;
-            start..end
-        });
-
-        addr_ranges
-            .flat_map(|r| r.step_by(4096))
-            .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr as u64)))
-    }
+    log::info!("=== Memory Statistics ===");
+    log::info!("Total frames:    {}", stats.total_frames);
+    log::info!("Used frames:     {}", stats.used_frames);
+    log::info!("Free frames:     {}", stats.free_frames);
+    log::info!("Total memory:    {}", format_bytes(stats.total_memory));
+    log::info!("Used memory:     {}", format_bytes(stats.used_memory));
+    log::info!("Free memory:     {}", format_bytes(stats.free_memory));
+    log::info!(
+        "Usage:           {}%",
+        (stats.used_frames * 100) / stats.total_frames
+    );
 }
 
-unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let frame = self.usable_frames().nth(self.next);
-        self.next += 1;
-        frame
-    }
+/// Get memory statistics
+///
+/// # Arguments
+/// * `frame_allocator` - The frame allocator to query
+///
+/// # Returns
+/// * FrameStats containing memory usage information
+pub fn get_memory_stats(frame_allocator: &LockedFrameAllocator) -> FrameStats {
+    frame_allocator.stats()
 }

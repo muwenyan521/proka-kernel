@@ -45,7 +45,7 @@ pub extern "C" fn kernel_main() -> ! {
     let hhdm_offset = proka_kernel::memory::paging::get_hhdm_offset();
     let mut mapper = unsafe { proka_kernel::memory::paging::init_offset_page_table(hhdm_offset) };
     let mut frame_allocator =
-        unsafe { proka_kernel::memory::paging::BootInfoFrameAllocator::new(memory_map_response) };
+        unsafe { proka_kernel::memory::paging::init_frame_allocator(memory_map_response) };
 
     proka_kernel::memory::allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("Failed to initialize heap");
@@ -59,6 +59,9 @@ pub extern "C" fn kernel_main() -> ! {
 
     info!("Heap initialized");
     info!("Paging initialized");
+
+    // Print memory statistics
+    proka_kernel::memory::paging::print_memory_stats(&frame_allocator);
 
     proka_kernel::libs::initrd::load_initrd();
 
