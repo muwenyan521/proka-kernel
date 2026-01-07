@@ -26,15 +26,18 @@ pub fn enable_x2apic() {
     }
 }
 
-pub fn init() {
+pub fn init() -> bool {
     if apic_is_available() {
         if x2apic_is_available() {
-            debug!("x2APIC is available")
+            debug!("x2APIC is available");
+            enable_x2apic();
+            return true;
         } else {
             debug!("APIC is available");
+            return true;
         }
     } else {
-        error!("Don't support PIC mode!");
-        panic!("ERROR: Don't support PIC mode!");
+        error!("APIC not supported!");
+        return false;
     }
 }

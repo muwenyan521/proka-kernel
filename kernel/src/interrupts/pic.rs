@@ -10,3 +10,7 @@ pub static PICS: spin::Mutex<ChainedPics> =
 pub fn init() {
     unsafe { PICS.lock().initialize() };
 }
+
+pub fn disable() {
+    unsafe { PICS.lock().disable() };
+}

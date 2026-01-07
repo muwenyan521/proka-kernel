@@ -70,8 +70,19 @@ pub extern "C" fn kernel_main() -> ! {
     info!("GDT Initialized");
     proka_kernel::interrupts::idt::init_idt();
     info!("IDT initialized");
+    
+    // Initialize Interrupt Controller
+    // We default to PIC for now as APIC support is partial (no IOAPIC yet)
     proka_kernel::interrupts::pic::init();
     info!("PIC initialized");
+
+    // Try to enable APIC if available
+    if proka_kernel::interrupts::apic::init() {
+        info!("APIC detected and enabled");
+    } else {
+        info!("Using legacy PIC only");
+    }
+
     x86_64::instructions::interrupts::enable();
 
     println!("Device list:");
