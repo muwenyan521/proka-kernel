@@ -3,10 +3,19 @@ use crate::graphics::color;
 use crate::libs::bmp::{BmpError, BmpImage};
 use alloc::{vec, vec::Vec};
 use core::slice;
-use glam::U64Vec2;
 use limine::framebuffer::Framebuffer;
 
-pub type Pixel = U64Vec2;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pixel {
+    pub x: u64,
+    pub y: u64,
+}
+
+impl Pixel {
+    pub fn new(x: u64, y: u64) -> Self {
+        Self { x, y }
+    }
+}
 
 pub trait PixelCoord {
     fn to_coord(&self) -> (u64, u64);
