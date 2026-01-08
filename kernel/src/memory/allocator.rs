@@ -3,7 +3,7 @@
 //! This module implements the heap allocator for the kernel.
 //! It uses the `linked_list_allocator` crate to manage heap memory.
 
-use linked_list_allocator::LockedHeap;
+use talc::{ClaimOnOom, Span, Talc, Talck};
 use x86_64::{
     structures::paging::{
         mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB,
@@ -17,7 +17,12 @@ pub const HEAP_START: usize = 0x_4444_4444_0000;
 pub const HEAP_SIZE: usize = 8 * 1024 * 1024;
 
 #[global_allocator]
-static ALLOCATOR: LockedHeap = LockedHeap::empty();
+static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> = Talc::new(unsafe {
+    // if we're in a hosted environment, the Rust runtime may allocate before
+    // main() is called, so we need to initialize the arena automatically
+    ClaimOnOom::new(Span::empty())
+})
+.lock();
 
 /// Initialize the heap
 ///
@@ -34,11 +39,12 @@ pub fn init_heap(
     mapper: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) -> Result<(), MapToError<Size4KiB>> {
+    let heap_start = VirtAddr::new(HEAP_START as u64);
+    let heap_end = heap_start + HEAP_SIZE as u64;
+
     let page_range = {
-        let heap_start = VirtAddr::new(HEAP_START as u64);
-        let heap_end = heap_start + HEAP_SIZE as u64 - 1u64;
         let heap_start_page = Page::containing_address(heap_start);
-        let heap_end_page = Page::containing_address(heap_end);
+        let heap_end_page = Page::containing_address(heap_end - 1u64);
         Page::range_inclusive(heap_start_page, heap_end_page)
     };
 
@@ -53,7 +59,13 @@ pub fn init_heap(
     }
 
     unsafe {
-        ALLOCATOR.lock().init(HEAP_START as *mut u8, HEAP_SIZE);
+        ALLOCATOR
+            .lock()
+            .claim(Span::new(
+                heap_start.as_mut_ptr::<u8>(),
+                heap_end.as_mut_ptr::<u8>(),
+            ))
+            .expect("Failed to claim heap region");
     }
 
     Ok(())

@@ -159,6 +159,7 @@ dependencies = [
  "pic8259",
  "raw-cpuid 11.5.0",
  "spin 0.10.0",
+ "talc",
  "uart_16550",
  "x86_64",
 ]
@@ -213,6 +214,15 @@ name = "spinning_top"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b9eb1a2f4c41445a3a0ff9abc5221c5fcd28e1f13cd7c0397706f9ac938ddb0"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "talc"
+version = "4.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3ae828aa394de34c7de08f522d1b86bd1c182c668d27da69caadda00590f26d"
 dependencies = [
  "lock_api",
 ]
