@@ -39,11 +39,15 @@ impl Keyboard {
     }
 
     pub fn set_enabled(&self, enabled: bool) {
-        self.inner.lock().enabled = enabled;
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            self.inner.lock().enabled = enabled;
+        });
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.inner.lock().enabled
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            self.inner.lock().enabled
+        })
     }
 
     pub fn handle_scancode(&self, scancode: u8) {
@@ -98,31 +102,33 @@ impl SharedDeviceOps for Keyboard {
 
 impl CharDevice for Keyboard {
     fn read(&self, buf: &mut [u8]) -> Result<usize, DeviceError> {
-        let mut inner = self.inner.lock();
-        let mut read_count = 0;
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut inner = self.inner.lock();
+            let mut read_count = 0;
 
-        while read_count < buf.len() && inner.head != inner.tail {
-            let c = inner.buffer[inner.head];
-            inner.head = (inner.head + 1) % BUFFER_SIZE;
+            while read_count < buf.len() && inner.head != inner.tail {
+                let c = inner.buffer[inner.head];
+                inner.head = (inner.head + 1) % BUFFER_SIZE;
 
-            let mut char_buf = [0u8; 4];
-            let char_str = c.encode_utf8(&mut char_buf);
-            let bytes = char_str.as_bytes();
+                let mut char_buf = [0u8; 4];
+                let char_str = c.encode_utf8(&mut char_buf);
+                let bytes = char_str.as_bytes();
 
-            if read_count + bytes.len() <= buf.len() {
-                buf[read_count..read_count + bytes.len()].copy_from_slice(bytes);
-                read_count += bytes.len();
-            } else {
-                inner.head = (inner.head + BUFFER_SIZE - 1) % BUFFER_SIZE;
-                break;
+                if read_count + bytes.len() <= buf.len() {
+                    buf[read_count..read_count + bytes.len()].copy_from_slice(bytes);
+                    read_count += bytes.len();
+                } else {
+                    inner.head = (inner.head + BUFFER_SIZE - 1) % BUFFER_SIZE;
+                    break;
+                }
             }
-        }
 
-        if read_count == 0 && buf.len() > 0 {
-            Err(DeviceError::WouldBlock)
-        } else {
-            Ok(read_count)
-        }
+            if read_count == 0 && buf.len() > 0 {
+                Err(DeviceError::WouldBlock)
+            } else {
+                Ok(read_count)
+            }
+        })
     }
 
     fn write(&self, _buf: &[u8]) -> Result<usize, DeviceError> {
@@ -130,8 +136,10 @@ impl CharDevice for Keyboard {
     }
 
     fn has_data(&self) -> bool {
-        let inner = self.inner.lock();
-        inner.head != inner.tail
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let inner = self.inner.lock();
+            inner.head != inner.tail
+        })
     }
 }
 
