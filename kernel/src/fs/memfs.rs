@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::drivers::{Device, DEVICE_MANAGER};
+use crate::drivers::Device;
 use crate::fs::vfs::{FileSystem, Inode, Metadata, VNodeType, VfsError};
 use alloc::{
     collections::BTreeMap,
@@ -43,9 +43,7 @@ pub enum MemNodeContent {
         target: String,
     },
     Device {
-        major: u16,
-        minor: u16,
-        dev_type: crate::drivers::DeviceType,
+        device: Arc<Device>,
     },
 }
 
@@ -155,22 +153,7 @@ impl Inode for MemVNode {
                 buf[..bytes_to_read].copy_from_slice(&data[start..end]);
                 Ok(bytes_to_read)
             }
-            MemNodeContent::Device {
-                major,
-                minor,
-                dev_type,
-            } => {
-                let device_manager = DEVICE_MANAGER.read();
-                let device = device_manager
-                    .get_device_by_major_minor(*major, *minor)
-                    .ok_or(VfsError::DeviceError(
-                        crate::drivers::DeviceError::NoSuchDevice,
-                    ))?;
-
-                if device.device_type() != *dev_type {
-                    return Err(VfsError::InvalidArgument);
-                }
-
+            MemNodeContent::Device { device } => {
                 if let Some(char_dev) = device.as_char_device() {
                     char_dev.read(buf).map_err(VfsError::DeviceError)
                 } else {
@@ -200,22 +183,7 @@ impl Inode for MemVNode {
 
                 Ok(buf.len())
             }
-            MemNodeContent::Device {
-                major,
-                minor,
-                dev_type,
-            } => {
-                let device_manager = DEVICE_MANAGER.read();
-                let device = device_manager
-                    .get_device_by_major_minor(*major, *minor)
-                    .ok_or(VfsError::DeviceError(
-                        crate::drivers::DeviceError::NoSuchDevice,
-                    ))?;
-
-                if device.device_type() != *dev_type {
-                    return Err(VfsError::InvalidArgument);
-                }
-
+            MemNodeContent::Device { device } => {
                 if let Some(char_dev) = device.as_char_device() {
                     char_dev.write(buf).map_err(VfsError::DeviceError)
                 } else {
@@ -314,9 +282,7 @@ impl Inode for MemVNode {
     fn create_device(
         &self,
         name: &str,
-        major: u16,
-        minor: u16,
-        device_type: crate::drivers::DeviceType,
+        device: Arc<Device>,
     ) -> Result<Arc<dyn Inode>, VfsError> {
         match &self.content {
             MemNodeContent::Dir { entries } => {
@@ -325,21 +291,9 @@ impl Inode for MemVNode {
                     return Err(VfsError::AlreadyExists);
                 }
 
-                let device_manager = DEVICE_MANAGER.read();
-                let _ = device_manager
-                    .get_device_by_major_minor(major, minor)
-                    .ok_or(VfsError::DeviceError(
-                        crate::drivers::DeviceError::NoSuchDevice,
-                    ))?;
-                drop(device_manager);
-
                 let new_node = MemVNode::new(
                     VNodeType::Device,
-                    MemNodeContent::Device {
-                        major,
-                        minor,
-                        dev_type: device_type,
-                    },
+                    MemNodeContent::Device { device },
                 );
                 entries.insert(name.to_string(), new_node.clone());
                 self.update_mtime();
@@ -418,7 +372,7 @@ pub struct MemFs;
 impl FileSystem for MemFs {
     fn mount(
         &self,
-        _device: Option<&Device>,
+        _device: Option<Arc<Device>>,
         _args: Option<&[&str]>,
     ) -> Result<Arc<dyn Inode>, VfsError> {
         let root_dir = MemVNode::new(

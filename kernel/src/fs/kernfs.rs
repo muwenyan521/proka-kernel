@@ -1,4 +1,5 @@
 extern crate alloc;
+use crate::drivers::Device;
 use crate::fs::vfs::{FileSystem, Inode, Metadata, VNodeType, VfsError};
 use alloc::{
     boxed::Box,
@@ -24,9 +25,7 @@ pub enum KernNodeContent {
     },
     /// 设备映射
     Device {
-        major: u16,
-        minor: u16,
-        dev_type: crate::drivers::DeviceType,
+        device: Arc<Device>,
     },
 }
 
@@ -57,14 +56,10 @@ impl KernInode {
         })
     }
     /// 创建设备节点
-    pub fn new_device(major: u16, minor: u16, dev_type: crate::drivers::DeviceType) -> Arc<Self> {
+    pub fn new_device(device: Arc<Device>) -> Arc<Self> {
         Arc::new(Self {
             node_type: VNodeType::Device,
-            content: KernNodeContent::Device {
-                major,
-                minor,
-                dev_type,
-            },
+            content: KernNodeContent::Device { device },
         })
     }
 
@@ -119,22 +114,7 @@ impl Inode for KernInode {
                     Err(VfsError::PermissionDenied)
                 }
             }
-            KernNodeContent::Device {
-                major,
-                minor,
-                dev_type,
-            } => {
-                let device_manager = crate::drivers::DEVICE_MANAGER.read();
-                let device = device_manager
-                    .get_device_by_major_minor(*major, *minor)
-                    .ok_or(VfsError::DeviceError(
-                        crate::drivers::DeviceError::NoSuchDevice,
-                    ))?;
-
-                if device.device_type() != *dev_type {
-                    return Err(VfsError::InvalidArgument);
-                }
-
+            KernNodeContent::Device { device } => {
                 if let Some(char_dev) = device.as_char_device() {
                     char_dev.read(buf).map_err(VfsError::DeviceError)
                 } else {
@@ -154,18 +134,7 @@ impl Inode for KernInode {
                     Err(VfsError::PermissionDenied)
                 }
             }
-            KernNodeContent::Device {
-                major,
-                minor,
-                dev_type: _,
-            } => {
-                let device_manager = crate::drivers::DEVICE_MANAGER.read();
-                let device = device_manager
-                    .get_device_by_major_minor(*major, *minor)
-                    .ok_or(VfsError::DeviceError(
-                        crate::drivers::DeviceError::NoSuchDevice,
-                    ))?;
-
+            KernNodeContent::Device { device } => {
                 if let Some(char_dev) = device.as_char_device() {
                     char_dev.write(buf).map_err(VfsError::DeviceError)
                 } else {
@@ -210,6 +179,26 @@ impl Inode for KernInode {
                     _ => return Err(VfsError::NotImplemented),
                 };
 
+                map.insert(name.to_string(), new_inode.clone());
+                Ok(new_inode)
+            }
+            _ => Err(VfsError::NotADirectory),
+        }
+    }
+
+    fn create_device(
+        &self,
+        name: &str,
+        device: Arc<Device>,
+    ) -> Result<Arc<dyn Inode>, VfsError> {
+        match &self.content {
+            KernNodeContent::Dir(entries) => {
+                let mut map = entries.write();
+                if map.contains_key(name) {
+                    return Err(VfsError::AlreadyExists);
+                }
+                
+                let new_inode = KernInode::new_device(device);
                 map.insert(name.to_string(), new_inode.clone());
                 Ok(new_inode)
             }
@@ -262,7 +251,7 @@ impl KernFs {
 impl FileSystem for KernFs {
     fn mount(
         &self,
-        _device: Option<&crate::drivers::Device>,
+        _device: Option<Arc<Device>>,
         _args: Option<&[&str]>,
     ) -> Result<Arc<dyn Inode>, VfsError> {
         Ok(self.root.clone())

@@ -3,7 +3,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use lazy_static::lazy_static;
 use spin::RwLock;
 
@@ -34,8 +34,8 @@ pub enum DeviceError {
     AddressOutOfRange,
     DeviceAlreadyRegistered,
     DeviceNumberConflict,
-    DeviceNotRegistered, // 新增：设备未注册错误
-    DeviceStillInUse,    // 新增：设备仍在使用中
+    DeviceNotRegistered,
+    DeviceStillInUse,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,7 +63,7 @@ pub trait SharedDeviceOps: Send + Sync {
     }
 }
 
-pub trait BlockDeviceOps: SharedDeviceOps {
+pub trait BlockDevice: SharedDeviceOps {
     fn block_size(&self) -> usize;
     fn num_blocks(&self) -> usize;
 
@@ -88,7 +88,7 @@ pub trait BlockDeviceOps: SharedDeviceOps {
     }
 }
 
-pub trait CharDeviceOps: SharedDeviceOps {
+pub trait CharDevice: SharedDeviceOps {
     fn read(&self, buf: &mut [u8]) -> Result<usize, DeviceError>;
     fn write(&self, buf: &[u8]) -> Result<usize, DeviceError>;
 
@@ -105,7 +105,6 @@ pub trait CharDeviceOps: SharedDeviceOps {
         false
     }
 
-    // 新增非阻塞操作支持
     fn set_nonblocking(&self, nonblocking: bool) -> Result<(), DeviceError> {
         let _ = nonblocking;
         Err(DeviceError::NotSupported)
@@ -114,18 +113,17 @@ pub trait CharDeviceOps: SharedDeviceOps {
 
 #[derive(Clone)]
 pub enum DeviceInner {
-    Block(Arc<dyn BlockDeviceOps>),
-    Char(Arc<dyn CharDeviceOps>),
-    Network, // 为未来扩展预留
+    Char(Arc<dyn CharDevice>),
+    Block(Arc<dyn BlockDevice>),
 }
 
 pub struct Device {
     pub name: String,
     pub major: u16,
     pub minor: u16,
-    inner: DeviceInner,
+    pub inner: DeviceInner,
     open_count: AtomicUsize,
-    is_registered: bool, // 新增：跟踪设备注册状态
+    is_registered: AtomicBool,
 }
 
 impl Device {
@@ -136,7 +134,7 @@ impl Device {
             minor,
             inner,
             open_count: AtomicUsize::new(0),
-            is_registered: false,
+            is_registered: AtomicBool::new(false),
         }
     }
 
@@ -147,7 +145,7 @@ impl Device {
             minor: 0,
             inner,
             open_count: AtomicUsize::new(0),
-            is_registered: false,
+            is_registered: AtomicBool::new(false),
         }
     }
 
@@ -156,7 +154,6 @@ impl Device {
         match &self.inner {
             DeviceInner::Block(ops) => ops.as_ref(),
             DeviceInner::Char(ops) => ops.as_ref(),
-            _ => unimplemented!(),
         }
     }
 
@@ -165,7 +162,7 @@ impl Device {
     }
 
     pub fn open(&self) -> Result<(), DeviceError> {
-        if !self.is_registered {
+        if !self.is_registered.load(Ordering::SeqCst) {
             return Err(DeviceError::DeviceNotRegistered);
         }
 
@@ -177,7 +174,7 @@ impl Device {
     }
 
     pub fn close(&self) -> Result<(), DeviceError> {
-        if !self.is_registered {
+        if !self.is_registered.load(Ordering::SeqCst) {
             return Err(DeviceError::DeviceNotRegistered);
         }
 
@@ -191,7 +188,7 @@ impl Device {
     }
 
     pub fn ioctl(&self, cmd: u64, arg: u64) -> Result<u64, DeviceError> {
-        if !self.is_registered {
+        if !self.is_registered.load(Ordering::SeqCst) {
             return Err(DeviceError::DeviceNotRegistered);
         }
         if self.open_count.load(Ordering::SeqCst) == 0 {
@@ -204,7 +201,7 @@ impl Device {
         self.open_count.load(Ordering::Relaxed) > 0
     }
 
-    pub fn as_block_device(&self) -> Option<&Arc<dyn BlockDeviceOps>> {
+    pub fn as_block_device(&self) -> Option<&Arc<dyn BlockDevice>> {
         if let DeviceInner::Block(ref ops) = self.inner {
             Some(ops)
         } else {
@@ -212,7 +209,7 @@ impl Device {
         }
     }
 
-    pub fn as_char_device(&self) -> Option<&Arc<dyn CharDeviceOps>> {
+    pub fn as_char_device(&self) -> Option<&Arc<dyn CharDevice>> {
         if let DeviceInner::Char(ref ops) = self.inner {
             Some(ops)
         } else {
@@ -220,14 +217,12 @@ impl Device {
         }
     }
 
-    // 新增：标记注册状态
-    fn mark_registered(&mut self) {
-        self.is_registered = true;
+    fn mark_registered(&self) {
+        self.is_registered.store(true, Ordering::SeqCst);
     }
 
-    // 新增：取消注册状态
-    fn mark_unregistered(&mut self) {
-        self.is_registered = false;
+    fn mark_unregistered(&self) {
+        self.is_registered.store(false, Ordering::SeqCst);
     }
 }
 
@@ -240,7 +235,7 @@ impl core::fmt::Debug for Device {
             self.major,
             self.minor,
             self.open_count.load(Ordering::SeqCst),
-            self.is_registered
+            self.is_registered.load(Ordering::SeqCst)
         )
     }
 }
@@ -252,16 +247,16 @@ impl Clone for Device {
             major: self.major,
             minor: self.minor,
             open_count: AtomicUsize::new(self.open_count.load(Ordering::SeqCst)),
-            is_registered: self.is_registered,
+            is_registered: AtomicBool::new(self.is_registered.load(Ordering::SeqCst)),
             inner: self.inner.clone(),
         }
     }
 }
 
 pub struct DeviceManager {
-    devices: Vec<Device>,
+    devices: Vec<Arc<Device>>,
     next_minor_counters: BTreeMap<u16, u16>,
-    free_minors: BTreeMap<u16, Vec<u16>>, // 新增：空闲次设备号回收
+    free_minors: BTreeMap<u16, Vec<u16>>,
 }
 
 impl DeviceManager {
@@ -269,25 +264,20 @@ impl DeviceManager {
         Self {
             devices: Vec::new(),
             next_minor_counters: BTreeMap::new(),
-            free_minors: BTreeMap::new(), // 初始化空闲次设备号映射
+            free_minors: BTreeMap::new(),
         }
     }
 
-    pub fn register_device(&mut self, mut device: Device) -> Result<(), DeviceError> {
-        // 检查名称冲突
+    pub fn register_device(&mut self, mut device: Device) -> Result<Arc<Device>, DeviceError> {
         if self.devices.iter().any(|d| d.name == device.name) {
             return Err(DeviceError::DeviceAlreadyRegistered);
         }
 
-        // 自动分配设备号
         if device.major == 0 && device.minor == 0 {
             let (major, minor) = self.alloc_device_number(device.device_type())?;
             device.major = major;
             device.minor = minor;
-        }
-        // 手动分配设备号
-        else {
-            // 检查设备号冲突
+        } else {
             if self
                 .devices
                 .iter()
@@ -296,34 +286,29 @@ impl DeviceManager {
                 return Err(DeviceError::DeviceNumberConflict);
             }
 
-            // 更新该主设备号的次设备号追踪器
             self.update_minor_counter(device.major, device.minor);
         }
 
-        device.mark_registered(); // 标记为已注册
-        self.devices.push(device);
-        Ok(())
+        device.mark_registered();
+        let device_arc = Arc::new(device);
+        self.devices.push(device_arc.clone());
+        Ok(device_arc)
     }
 
-    // 重构设备号分配函数
     fn alloc_device_number(&mut self, device_type: DeviceType) -> Result<(u16, u16), DeviceError> {
         let major = match device_type {
             DeviceType::Char => 1,
             DeviceType::Block => 2,
         };
 
-        // 优先尝试从回收的次设备号中分配
         if let Some(minor) = self.free_minors.get_mut(&major).and_then(|v| v.pop()) {
             return Ok((major, minor));
         }
 
-        // 从计数器中分配新次设备号
         let next_minor = self.next_minor_counters.entry(major).or_insert(0);
         let mut current_minor = *next_minor;
 
-        // 查找可用次设备号 (最多尝试65535次)
         for _ in 0..u16::MAX as usize {
-            // 将 is_minor_used 的逻辑内联以避免同时持有可变和不可变借用
             let is_used = self
                 .devices
                 .iter()
@@ -359,19 +344,16 @@ impl DeviceManager {
             if self.devices[index].is_open() {
                 return Err(DeviceError::DeviceStillInUse);
             }
-
-            let mut device = self.devices.remove(index);
-            device.mark_unregistered(); // 更新注册状态
-
-            // 回收设备号
-            self.reclaim_device_number(device.major, device.minor);
+            
+            let device_arc = self.devices.remove(index);
+            device_arc.mark_unregistered();
+            self.reclaim_device_number(device_arc.major, device_arc.minor);
             Ok(())
         } else {
             Err(DeviceError::NoSuchDevice)
         }
     }
 
-    // 新增设备号回收方法
     fn reclaim_device_number(&mut self, major: u16, minor: u16) {
         self.free_minors
             .entry(major)
@@ -379,26 +361,27 @@ impl DeviceManager {
             .push(minor);
     }
 
-    // 其他方法保持不变
-    pub fn get_device(&self, name: &str) -> Option<&Device> {
-        self.devices.iter().find(|d| d.name == name)
+    pub fn get_device(&self, name: &str) -> Option<Arc<Device>> {
+        self.devices.iter().find(|d| d.name == name).cloned()
     }
 
-    pub fn get_device_by_major_minor(&self, major: u16, minor: u16) -> Option<&Device> {
+    pub fn get_device_by_major_minor(&self, major: u16, minor: u16) -> Option<Arc<Device>> {
         self.devices
             .iter()
             .find(|d| d.major == major && d.minor == minor)
+            .cloned()
     }
 
-    pub fn get_devices_by_type(&self, device_type: DeviceType) -> Vec<&Device> {
+    pub fn get_devices_by_type(&self, device_type: DeviceType) -> Vec<Arc<Device>> {
         self.devices
             .iter()
             .filter(|d| d.device_type() == device_type)
+            .cloned()
             .collect()
     }
 
-    pub fn list_devices(&self) -> Vec<&Device> {
-        self.devices.iter().collect()
+    pub fn list_devices(&self) -> Vec<Arc<Device>> {
+        self.devices.clone()
     }
 }
 

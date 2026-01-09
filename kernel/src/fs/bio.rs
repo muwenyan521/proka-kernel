@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::drivers::block::BlockDevice;
+use crate::drivers::device::BlockDevice;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -30,7 +30,7 @@ impl BlockCache {
         let mut buf = Vec::with_capacity(block_size);
         buf.resize(block_size, 0);
 
-        if self.device.read_block(block_id, &mut buf).is_ok() {
+        if self.device.read_blocks(block_id, 1, &mut buf).is_ok() {
             let mut cache = self.cache.write();
             cache.insert(block_id, buf.clone());
             Some(buf)
@@ -40,7 +40,7 @@ impl BlockCache {
     }
 
     pub fn write_block(&self, block_id: usize, data: &[u8]) -> bool {
-        if self.device.write_block(block_id, data).is_ok() {
+        if self.device.write_blocks(block_id, 1, data).is_ok() {
             let mut cache = self.cache.write();
             cache.insert(block_id, data.to_vec());
             true

@@ -92,7 +92,7 @@ pub struct Metadata {
 pub trait FileSystem: Send + Sync {
     fn mount(
         &self,
-        device: Option<&Device>,
+        device: Option<Arc<Device>>,
         args: Option<&[&str]>,
     ) -> Result<Arc<dyn Inode>, VfsError>;
     fn fs_type(&self) -> &'static str;
@@ -117,11 +117,9 @@ pub trait Inode: Send + Sync {
     fn create_device(
         &self,
         name: &str,
-        major: u16,
-        minor: u16,
-        device_type: crate::drivers::DeviceType,
+        device: Arc<Device>,
     ) -> Result<Arc<dyn Inode>, VfsError> {
-        let _ = (name, major, minor, device_type);
+        let _ = (name, device);
         Err(VfsError::NotImplemented)
     }
 
@@ -340,7 +338,17 @@ impl Vfs {
         if parent_inode.node_type() != VNodeType::Dir {
             return Err(VfsError::NotADirectory);
         }
-        parent_inode.create_device(name, major, minor, device_type)
+
+        let device_manager = DEVICE_MANAGER.read();
+        let device = device_manager
+            .get_device_by_major_minor(major, minor)
+            .ok_or(VfsError::DeviceError(crate::drivers::DeviceError::NoSuchDevice))?;
+
+        if device.device_type() != device_type {
+            return Err(VfsError::DeviceError(crate::drivers::DeviceError::InvalidParam));
+        }
+
+        parent_inode.create_device(name, device)
     }
 
     pub fn remove(&self, path: &str) -> Result<(), VfsError> {
