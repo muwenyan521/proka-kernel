@@ -23,6 +23,7 @@ extern crate proka_kernel;
 extern crate alloc;
 use log::info;
 use proka_kernel::drivers::init_devices;
+use proka_kernel::fs::vfs::VFS;
 use proka_kernel::BASE_REVISION;
 /* C functions extern area */
 extern_safe! {
@@ -70,7 +71,7 @@ pub extern "C" fn kernel_main() -> ! {
     info!("GDT Initialized");
     proka_kernel::interrupts::idt::init_idt();
     info!("IDT initialized");
-    
+
     // Initialize Interrupt Controller
     // We default to PIC for now as APIC support is partial (no IOAPIC yet)
     proka_kernel::interrupts::pic::init();
@@ -93,6 +94,13 @@ pub extern "C" fn kernel_main() -> ! {
     {
         println!("{:?}", device);
     }
+    let fp = VFS.open("test.txt").expect("Can't open initrd");
+    let mut buf = [0u8; 1024];
+    let len = fp.read(&mut buf).expect("Failed to read file");
+    println!(
+        "File content: {}",
+        core::str::from_utf8(&buf[..len]).unwrap()
+    );
 
     loop {
         x86_64::instructions::hlt();

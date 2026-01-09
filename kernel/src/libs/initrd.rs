@@ -1,9 +1,10 @@
 extern crate alloc;
-use crate::fs::vfs::{VNodeType, VfsError, VFS};
+use crate::fs::memfs::MemFs;
+use crate::fs::vfs::{File, FileSystem, VNodeType, VfsError, VFS};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 
 /// This code is originally from https://github.com/rcore-os/cpio/blob/main/src/lib.rs, with minor modifications made here.
 
@@ -186,7 +187,7 @@ const CPIO_S_IFLNK: u32 = 0o120000; // Symbolic link
 pub fn load_cpio(initrd_data: &[u8]) -> Result<(), VfsError> {
     let reader = CpioNewcReader::new(initrd_data);
     let vfs = &*VFS;
-
+    debug!("Loading CPIO archive...");
     for obj_result in reader {
         let obj = obj_result.map_err(|e| {
             error!("CPIO read error: {:?}", e);
@@ -256,12 +257,13 @@ pub fn load_cpio(initrd_data: &[u8]) -> Result<(), VfsError> {
                 }
             }
         }
-
+        debug!("Created parent directories for {}", final_path);
         // Now, handle the actual CPIO object based on its type
         match node_type_mode {
             CPIO_S_IFREG => {
-                let file_node = vfs.create_file(&final_path)?;
-                let mut file_handle = file_node.open()?;
+                let file_inode = vfs.create_file(&final_path)?;
+                debug!("Created file {}", final_path);
+                let file_handle = File::new(file_inode);
                 file_handle.write(obj.data)?;
             }
             CPIO_S_IFLNK => {
@@ -276,6 +278,12 @@ pub fn load_cpio(initrd_data: &[u8]) -> Result<(), VfsError> {
 }
 
 pub fn load_initrd() {
+    let memfs = MemFs;
+    let root = memfs
+        .mount(None, None)
+        .expect("Failed to initialize root filesystem");
+    VFS.init_root(root);
+
     // Load initrd
     if let Some(initrd_response) = crate::MODULE_REQUEST.get_response() {
         if let Some(inir) = initrd_response.modules().first() {
