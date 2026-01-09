@@ -8,7 +8,11 @@ pub static PICS: spin::Mutex<ChainedPics> =
     spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
 
 pub fn init() {
-    unsafe { PICS.lock().initialize() };
+    unsafe {
+        let mut pics = PICS.lock();
+        pics.initialize();
+        pics.write_masks(0xFD, 0xFF);
+    }
 }
 
 pub fn disable() {

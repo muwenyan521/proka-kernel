@@ -106,15 +106,18 @@ macro_rules! pic_interrupt_handler {
     ($name:ident, $irq_number:expr) => {
         #[allow(unused_variables)]
         pub extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame) {
-            // 在这里处理特定 IRQ 的逻辑
-            // 例如：如果是键盘中断 (IRQ1)，读取键盘数据
-            serial_println!("IRQ {} received!", $irq_number); // 可以用于调试
+            if $irq_number == 1 {
+                let mut port = x86_64::instructions::port::Port::<u8>::new(0x60);
+                let scancode = unsafe { port.read() };
+                serial_println!("KEYBOARD IRQ: scancode {:#x}", scancode);
+            } else {
+                serial_println!("IRQ {} received!", $irq_number);
+            }
+
             unsafe {
                 PICS.lock()
                     .notify_end_of_interrupt(PIC_1_OFFSET + $irq_number);
             }
-            // 不要在此处调用 hlt_loop，因为中断是希望能够返回的。
-            // 当中断处理返回时，CPU会从中断帧恢复执行。
         }
     };
 }
