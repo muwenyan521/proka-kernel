@@ -103,6 +103,17 @@ pub extern "C" fn kernel_main() -> ! {
     );
 
     loop {
-        x86_64::instructions::hlt();
+        let mut buf = [0u8; 1];
+        let device_manager = proka_kernel::drivers::DEVICE_MANAGER.read();
+        if let Some(kbd_device) = device_manager.get_device("keyboard") {
+            if let Some(char_dev) = kbd_device.as_char_device() {
+                if let Ok(count) = char_dev.read(&mut buf) {
+                    if count > 0 {
+                        print!("{}", buf[0] as char);
+                    }
+                }
+            }
+        }
+        //x86_64::instructions::hlt();
     }
 }

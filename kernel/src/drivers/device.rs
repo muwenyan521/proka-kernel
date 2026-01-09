@@ -386,10 +386,14 @@ impl DeviceManager {
 }
 
 pub fn init_devices() {
-    DEVICE_MANAGER
-        .write()
+    let mut manager = DEVICE_MANAGER.write();
+    manager
         .register_device(super::char::serial::SerialDevice::create_device(
             1, 0, 0x3f8,
         ))
         .expect("Failed to register serial device");
+
+    manager
+        .register_device(super::input::keyboard::Keyboard::create_device())
+        .expect("Failed to register keyboard device");
 }
