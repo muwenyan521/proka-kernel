@@ -109,7 +109,10 @@ macro_rules! pic_interrupt_handler {
             if $irq_number == 1 {
                 let mut port = x86_64::instructions::port::Port::<u8>::new(0x60);
                 let scancode = unsafe { port.read() };
-                serial_println!("KEYBOARD IRQ: scancode {:#x}", scancode);
+                
+                if let Some(c) = crate::drivers::input::keyboard::KEYBOARD.lock().handle_scancode(scancode) {
+                    crate::print!("{}", c);
+                }
             } else {
                 serial_println!("IRQ {} received!", $irq_number);
             }
