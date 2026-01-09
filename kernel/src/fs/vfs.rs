@@ -158,6 +158,18 @@ pub trait VNode: Send + Sync + core::any::Any {
         let _ = name;
         Err(VfsError::NotImplemented)
     }
+    /// 在当前目录下创建名为 `name` 的设备节点。
+    /// major 和 minor 是设备号，`device_type` 是设备类型（例如 Block 或 Char）。
+    fn create_device(
+        &self,
+        name: &str,
+        major: u16,
+        minor: u16,
+        device_type: crate::drivers::DeviceType,
+    ) -> Result<Arc<dyn VNode>, VfsError> {
+        let _ = (name, major, minor, device_type); // 默认实现什么也不做
+        Err(VfsError::NotImplemented)
+    }
 
     /// 删除当前目录下的子节点。
     fn remove(&self, name: &str) -> Result<(), VfsError> {

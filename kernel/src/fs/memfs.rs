@@ -27,12 +27,12 @@ fn create_metadata(node_type: VNodeType, size: u64) -> Metadata {
     Metadata {
         size,
         permissions,
-        uid: 0,                          // 默认用户ID (root)
-        gid: 0,                          // 默认组ID (root)
-        ctime: 0,                        // 要求所有时间字段为 0
-        mtime: 0,                        // 要求所有时间字段为 0
-        blocks: size.div_ceil(512),       // 假设块大小为 512 字节
-        nlinks: 1,                       // 默认硬链接数为 1
+        uid: 0,                     // 默认用户ID (root)
+        gid: 0,                     // 默认组ID (root)
+        ctime: 0,                   // 要求所有时间字段为 0
+        mtime: 0,                   // 要求所有时间字段为 0
+        blocks: size.div_ceil(512), // 假设块大小为 512 字节
+        nlinks: 1,                  // 默认硬链接数为 1
     }
 }
 
@@ -173,7 +173,9 @@ impl VNode for MemVNode {
                 let device_manager = DEVICE_MANAGER.read();
                 let device = device_manager
                     .get_device_by_major_minor(*major, *minor)
-                    .ok_or(VfsError::DeviceNotFound)?;
+                    .ok_or(VfsError::DeviceError(
+                        crate::drivers::DeviceError::NoSuchDevice,
+                    ))?;
                 if device.device_type() != *dev_type {
                     return Err(VfsError::InvalidArgument); // 类型不匹配
                 }
@@ -252,7 +254,9 @@ impl VNode for MemVNode {
                 let device_manager = DEVICE_MANAGER.read();
                 let _ = device_manager
                     .get_device_by_major_minor(major, minor)
-                    .ok_or(VfsError::DeviceNotFound)?;
+                    .ok_or(VfsError::DeviceError(
+                        crate::drivers::DeviceError::NoSuchDevice,
+                    ))?;
                 drop(device_manager); // 释放锁
 
                 let new_node = MemVNode::new(
@@ -498,7 +502,7 @@ impl File for MemDeviceFile {
 
     fn seek(&self, _pos: u64) -> Result<u64, VfsError> {
         // 设备文件通常不支持 seek
-        Err(VfsError::NotSupported)
+        Err(VfsError::NotImplemented)
     }
 
     fn stat(&self) -> Result<Metadata, VfsError> {
@@ -508,7 +512,7 @@ impl File for MemDeviceFile {
 
     fn truncate(&mut self, _size: u64) -> Result<(), VfsError> {
         // 设备文件不支持 truncate
-        Err(VfsError::NotSupported)
+        Err(VfsError::NotImplemented)
     }
 }
 
