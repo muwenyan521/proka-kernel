@@ -20,22 +20,32 @@ lazy_static! {
 /// VFS操作可能返回的错误类型
 #[derive(Debug, PartialEq, Eq, Clone, Copy)] // 增加 Clone, Copy 便于错误处理
 pub enum VfsError {
+    /// 文件或目录不存在
     NotFound,
+    /// 文件或目录已存在
     AlreadyExists,
+    /// 路径不是目录
     NotADirectory,
+    /// 路径不是文件
     NotAFile,
+    /// 权限不足
     PermissionDenied,
+    /// 设备错误
     DeviceError(DeviceError),
+    /// 无效的参数
     InvalidArgument,
+    /// IO 错误
     IoError,
-    /// 符号链接解析深度超过限制
+    /// 符号链接深度过深
     MaxSymlinkDepth,
+    /// 文件系统类型不支持
     FsTypeNotSupported,
-    DeviceNotFound,
+    /// 路径为空
     EmptyPath,
+    /// 功能未实现
     NotImplemented,
-    DirectoryNotEmpty, // 新增：目录非空错误
-    NotSupported,
+    /// 目录非空
+    DirectoryNotEmpty,
 }
 
 impl From<DeviceError> for VfsError {
@@ -49,59 +59,74 @@ impl From<DeviceError> for VfsError {
 /// 虚拟文件系统节点的类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VNodeType {
+    /// 文件
     File,
+    /// 目录
     Dir,
+    /// 符号链接
     SymLink,
-    Device, // Block or Char device
+    /// 设备
+    Device,
 }
 
 /// 文件或目录的元数据
-#[derive(Debug, Clone, Eq, PartialEq)] // 增加 Eq, PartialEq
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Metadata {
+    /// 文件大小
     pub size: u64,
-    pub permissions: u32, // UNIX权限位，如0o755
+    /// UNIX权限位，如0o755
+    pub permissions: u32,
+    /// 用户ID
     pub uid: u32,
+    /// 组ID
     pub gid: u32,
-    pub ctime: u64, // 创建时间 (秒或毫秒，取决于系统)
-    pub mtime: u64, // 最后修改时间 (秒或毫秒)
-    // pub atime: u64, // 最后访问时间 (如果需要的话)
-    pub blocks: u64, // 占用的块数
-    pub nlinks: u64, // 硬链接数量
+    /// 创建时间 (秒)
+    pub ctime: u64,
+    /// 最后修改时间 (秒)
+    pub mtime: u64,
+    /// 占用的块数
+    pub blocks: u64,
+    /// 硬链接数量
+    pub nlinks: u64,
 }
 
 /// 文件操作接口
 pub trait File: Send + Sync {
-    /// 从文件当前位置读取数据到缓冲区。返回读取的字节数。
+    /// 从文件当前位置读取数据到缓冲区。返回读取的字节数
     fn read(&self, buf: &mut [u8]) -> Result<usize, VfsError>;
-    /// 将缓冲区数据写入文件当前位置。返回写入的字节数。
+    /// 将缓冲区数据写入文件当前位置。返回写入的字节数
     fn write(&mut self, buf: &[u8]) -> Result<usize, VfsError>;
-    /// 移动文件指针到指定位置。返回新的文件指针位置。
+    /// 移动文件指针到指定位置。返回新的文件指针位置
     fn seek(&self, pos: u64) -> Result<u64, VfsError>;
-    /// 获取文件元数据。
+    /// 获取文件元数据
     fn stat(&self) -> Result<Metadata, VfsError>;
-    /// 获取文件大小。
+    /// 获取文件大小
     fn len(&self) -> Result<u64, VfsError> {
         self.stat().map(|m| m.size)
     }
-    /// 截断文件到指定大小。
+    /// 截断文件到指定大小
     fn truncate(&mut self, size: u64) -> Result<(), VfsError> {
         let _ = size; // 默认实现什么也不做
         Err(VfsError::NotImplemented)
     }
-    // 更多文件操作如 flush, ioctl 等可在此添加
+    /// 文件系统操作
+    fn ioctl(&self, op: u32, arg: usize) -> Result<usize, VfsError> {
+        let _ = (op, arg); // 默认实现什么也不做
+        Err(VfsError::NotImplemented)
+    }
 }
 
 /// 文件系统实现接口
 pub trait FileSystem: Send + Sync {
     /// 挂载文件系统。返回文件系统的根VNode。
-    /// device: 实际设备（如块设备），如果文件系统是内存型的则为None。
+    /// device: 实际设备（如块设备）。
     /// args: 挂载参数。
     fn mount(
         &self,
         device: Option<&Device>,
         args: Option<&[&str]>,
     ) -> Result<Arc<dyn VNode>, VfsError>;
-    /// 返回文件系统类型的字符串标识符 (如 "memfs", "ext2")。
+    /// 返回文件系统类型的字符串标识符 (如"ext2")。
     fn fs_type(&self) -> &'static str;
 }
 
@@ -122,22 +147,15 @@ pub trait VNode: Send + Sync + core::any::Any {
     /// 在当前目录下创建名为 `name` 的子节点。
     fn create(&self, name: &str, typ: VNodeType) -> Result<Arc<dyn VNode>, VfsError>;
 
-    /// 在当前目录下创建名为 `name` 的设备节点。
-    /// major 和 minor 是设备号，`device_type` 是设备类型（例如 Block 或 Char）。
-    fn create_device(
-        &self,
-        name: &str,
-        major: u16,
-        minor: u16,
-        device_type: crate::drivers::DeviceType,
-    ) -> Result<Arc<dyn VNode>, VfsError> {
-        let _ = (name, major, minor, device_type); // 默认实现什么也不做
-        Err(VfsError::NotImplemented)
-    }
-
     /// 在当前目录下创建名为 `name` 的符号链接，指向 `target_path`。
     fn create_symlink(&self, name: &str, target_path: &str) -> Result<Arc<dyn VNode>, VfsError> {
         let _ = (name, target_path);
+        Err(VfsError::NotImplemented)
+    }
+
+    /// 创建名为 `name` 的目录
+    fn create_dir(&self, name: &str) -> Result<Arc<dyn VNode>, VfsError> {
+        let _ = name;
         Err(VfsError::NotImplemented)
     }
 
