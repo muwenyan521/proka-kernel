@@ -1,3 +1,5 @@
+mod ramblk;
+
 extern crate alloc;
 use crate::drivers::DeviceError;
 pub trait BlockDevice: Send + Sync {
