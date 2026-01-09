@@ -1,15 +1,14 @@
 extern crate alloc;
 use crate::drivers::{CharDevice, Device, DeviceError, DeviceInner, DeviceType, SharedDeviceOps};
-use crate::serial_println;
 use alloc::string::String;
 use alloc::sync::Arc;
+use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard as PcKeyboard, ScancodeSet1};
 use spin::Mutex;
 
 const BUFFER_SIZE: usize = 128;
 
 pub struct KeyboardInner {
-    shift_pressed: bool,
-    caps_lock: bool,
+    pc_keyboard: PcKeyboard<layouts::Us104Key, ScancodeSet1>,
     enabled: bool,
     buffer: [char; BUFFER_SIZE],
     head: usize,
@@ -25,8 +24,11 @@ impl Keyboard {
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(KeyboardInner {
-                shift_pressed: false,
-                caps_lock: false,
+                pc_keyboard: PcKeyboard::new(
+                    ScancodeSet1::new(),
+                    layouts::Us104Key,
+                    HandleControl::Ignore,
+                ),
                 enabled: true,
                 buffer: ['\0'; BUFFER_SIZE],
                 head: 0,
@@ -50,89 +52,25 @@ impl Keyboard {
             return;
         }
 
-        let c = match scancode {
-            0x2A | 0x36 => {
-                inner.shift_pressed = true;
-                None
+        if let Ok(Some(key_event)) = inner.pc_keyboard.add_byte(scancode) {
+            if let Some(key) = inner.pc_keyboard.process_keyevent(key_event) {
+                match key {
+                    DecodedKey::Unicode(character) => {
+                        let tail = inner.tail;
+                        let next_tail = (tail + 1) % BUFFER_SIZE;
+                        if next_tail != inner.head {
+                            inner.buffer[tail] = character;
+                            inner.tail = next_tail;
+                        }
+                    }
+                    DecodedKey::RawKey(_) => {}
+                }
             }
-            0xAA | 0xB6 => {
-                inner.shift_pressed = false;
-                None
-            }
-            0x3A => {
-                inner.caps_lock = !inner.caps_lock;
-                None
-            }
-            s if s & 0x80 != 0 => None,
-            _ => self.scancode_to_char(scancode, inner.shift_pressed, inner.caps_lock),
-        };
-
-        if let Some(ch) = c {
-            serial_println!("Key: {}", ch);
-            let tail = inner.tail;
-            let next_tail = (tail + 1) % BUFFER_SIZE;
-            if next_tail != inner.head {
-                inner.buffer[tail] = ch;
-                inner.tail = next_tail;
-            }
-        }
-    }
-
-    fn scancode_to_char(&self, scancode: u8, shift_pressed: bool, caps_lock: bool) -> Option<char> {
-        let is_upper = shift_pressed ^ caps_lock;
-
-        match scancode {
-            0x02 => Some(if shift_pressed { '!' } else { '1' }),
-            0x03 => Some(if shift_pressed { '@' } else { '2' }),
-            0x04 => Some(if shift_pressed { '#' } else { '3' }),
-            0x05 => Some(if shift_pressed { '$' } else { '4' }),
-            0x06 => Some(if shift_pressed { '%' } else { '5' }),
-            0x07 => Some(if shift_pressed { '^' } else { '6' }),
-            0x08 => Some(if shift_pressed { '&' } else { '7' }),
-            0x09 => Some(if shift_pressed { '*' } else { '8' }),
-            0x0A => Some(if shift_pressed { '(' } else { '9' }),
-            0x0B => Some(if shift_pressed { ')' } else { '0' }),
-
-            0x10 => Some(if is_upper { 'Q' } else { 'q' }),
-            0x11 => Some(if is_upper { 'W' } else { 'w' }),
-            0x12 => Some(if is_upper { 'E' } else { 'e' }),
-            0x13 => Some(if is_upper { 'R' } else { 'r' }),
-            0x14 => Some(if is_upper { 'T' } else { 't' }),
-            0x15 => Some(if is_upper { 'Y' } else { 'y' }),
-            0x16 => Some(if is_upper { 'U' } else { 'u' }),
-            0x17 => Some(if is_upper { 'I' } else { 'i' }),
-            0x18 => Some(if is_upper { 'O' } else { 'o' }),
-            0x19 => Some(if is_upper { 'P' } else { 'p' }),
-
-            0x1E => Some(if is_upper { 'A' } else { 'a' }),
-            0x1F => Some(if is_upper { 'S' } else { 's' }),
-            0x20 => Some(if is_upper { 'D' } else { 'd' }),
-            0x21 => Some(if is_upper { 'F' } else { 'f' }),
-            0x22 => Some(if is_upper { 'G' } else { 'g' }),
-            0x23 => Some(if is_upper { 'H' } else { 'h' }),
-            0x24 => Some(if is_upper { 'J' } else { 'j' }),
-            0x25 => Some(if is_upper { 'K' } else { 'k' }),
-            0x26 => Some(if is_upper { 'L' } else { 'l' }),
-
-            0x2C => Some(if is_upper { 'Z' } else { 'z' }),
-            0x2D => Some(if is_upper { 'X' } else { 'x' }),
-            0x2E => Some(if is_upper { 'C' } else { 'c' }),
-            0x2F => Some(if is_upper { 'V' } else { 'v' }),
-            0x30 => Some(if is_upper { 'B' } else { 'b' }),
-            0x31 => Some(if is_upper { 'N' } else { 'n' }),
-            0x32 => Some(if is_upper { 'M' } else { 'm' }),
-
-            0x39 => Some(' '),
-            0x1C => Some('\n'),
-            0x0E => Some('\x08'),
-
-            _ => None,
         }
     }
 
     pub fn create_device() -> Device {
-        let keyboard = Arc::new(Keyboard::new());
-        Device::new_auto_assign(keyboard.name.clone(), DeviceInner::Char(keyboard))
+        Device::new_auto_assign(KEYBOARD.name.clone(), DeviceInner::Char(KEYBOARD.clone()))
     }
 }
 
