@@ -170,7 +170,7 @@ impl VNode for MemVNode {
                 dev_type,
             } => {
                 // 对于设备文件，尝试通过设备管理器打开
-                let device_manager = DEVICE_MANAGER.lock();
+                let device_manager = DEVICE_MANAGER.read();
                 let device = device_manager
                     .get_device_by_major_minor(*major, *minor)
                     .ok_or(VfsError::DeviceNotFound)?;
@@ -249,7 +249,7 @@ impl VNode for MemVNode {
                 }
 
                 // 在创建设备节点前，先确认设备管理器中存在该设备
-                let device_manager = DEVICE_MANAGER.lock();
+                let device_manager = DEVICE_MANAGER.read();
                 let _ = device_manager
                     .get_device_by_major_minor(major, minor)
                     .ok_or(VfsError::DeviceNotFound)?;

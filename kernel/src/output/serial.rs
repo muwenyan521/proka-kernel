@@ -22,7 +22,7 @@ pub fn _print(args: ::core::fmt::Arguments) {
     use core::fmt::Write;
 
     // 获取设备管理器锁
-    let device_manager = DEVICE_MANAGER.lock();
+    let device_manager = DEVICE_MANAGER.read();
 
     // 尝试获取设备号为 (1, 0) 的字符设备
     match device_manager.get_device_by_major_minor(1, 0) {

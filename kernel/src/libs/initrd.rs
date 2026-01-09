@@ -185,7 +185,7 @@ const CPIO_S_IFLNK: u32 = 0o120000; // Symbolic link
 /// A `Result` indicating success or a `VfsError` if any operation fails.
 pub fn load_cpio(initrd_data: &[u8]) -> Result<(), VfsError> {
     let reader = CpioNewcReader::new(initrd_data);
-    let vfs = VFS.lock(); // Lock VFS for the duration of initrd loading
+    let vfs = &*VFS;
 
     for obj_result in reader {
         let obj = obj_result.map_err(|e| {

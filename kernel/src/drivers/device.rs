@@ -5,10 +5,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
-use spin::Mutex;
+use spin::RwLock;
 
 lazy_static! {
-    pub static ref DEVICE_MANAGER: Mutex<DeviceManager> = Mutex::new(DeviceManager::new());
+    pub static ref DEVICE_MANAGER: RwLock<DeviceManager> = RwLock::new(DeviceManager::new());
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,7 +404,7 @@ impl DeviceManager {
 
 pub fn init_devices() {
     DEVICE_MANAGER
-        .lock()
+        .write()
         .register_device(super::char::serial::SerialDevice::create_device(
             1, 0, 0x3f8,
         ))

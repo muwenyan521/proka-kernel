@@ -14,7 +14,7 @@ use spin::{Mutex, RwLock};
 
 lazy_static! {
     /// 全局唯一的虚拟文件系统实例
-    pub static ref VFS: Mutex<Vfs> = Mutex::new(Vfs::new());
+    pub static ref VFS: Vfs = Vfs::new();
 }
 
 /// VFS操作可能返回的错误类型
@@ -229,7 +229,7 @@ impl Vfs {
             .cloned()
             .ok_or(VfsError::FsTypeNotSupported)?;
 
-        let device_manager = DEVICE_MANAGER.lock(); // 获取设备管理器锁
+        let device_manager = DEVICE_MANAGER.read(); // 获取设备管理器锁
         let device = if let Some(dev) = device_str {
             device_manager.get_device(dev)
         } else {

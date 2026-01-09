@@ -87,7 +87,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     println!("Device list:");
     for device in proka_kernel::drivers::DEVICE_MANAGER
-        .lock()
+        .read()
         .list_devices()
         .iter()
     {
