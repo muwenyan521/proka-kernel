@@ -183,6 +183,17 @@ impl File {
     pub fn truncate(&self, size: u64) -> Result<(), VfsError> {
         self.inode.truncate(size)
     }
+
+    pub fn read_all(&self) -> Result<Vec<u8>, VfsError> {
+        let metadata = self.metadata()?;
+        let mut buf = alloc::vec![0; metadata.size as usize];
+        self.inode.read_at(0, &mut buf)?;
+        Ok(buf)
+    }
+    pub fn write_all(&self, data: &[u8]) -> Result<(), VfsError> {
+        self.inode.write_at(0, data)?;
+        Ok(())
+    }
 }
 
 struct MountPoint {
