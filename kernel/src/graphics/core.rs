@@ -1,3 +1,46 @@
+//! Core graphics rendering engine with double buffering support
+//!
+//! This module provides the main rendering engine for the Proka kernel graphics system.
+//! It implements a double-buffered renderer that draws to a back buffer and presents
+//! to the front buffer (framebuffer) to prevent screen tearing and artifacts.
+//!
+//! # Key Features
+//!
+//! - **Double buffering**: All drawing operations are performed on a back buffer,
+//!   then presented to the screen with `present()` method
+//! - **Pixel-level operations**: Direct pixel manipulation with alpha blending support
+//! - **Drawing primitives**: Lines, rectangles, circles, polygons, triangles
+//! - **BMP image support**: Loading and drawing BMP images with scaling and distortion
+//! - **Alpha blending**: Support for transparent colors and alpha compositing
+//! - **Scanline polygon filling**: Efficient polygon filling using scanline algorithms
+//!
+//! # Usage
+//!
+//! ```no_run
+//! use crate::graphics::core::{Renderer, Pixel, pixel};
+//! use crate::graphics::color::{Color, RED, BLUE, GREEN};
+//!
+//! // Initialize renderer with framebuffer
+//! let mut renderer = Renderer::new(framebuffer);
+//!
+//! // Set clear color and clear screen
+//! renderer.set_clear_color(Color::from_hex(0x1a1a2e));
+//! renderer.clear();
+//!
+//! // Draw shapes
+//! renderer.draw_line(pixel!(10, 10), pixel!(100, 100), RED);
+//! renderer.fill_rect(pixel!(50, 50), 80, 60, BLUE);
+//! renderer.draw_circle(pixel!(200, 150), 40, GREEN);
+//!
+//! // Present to screen
+//! renderer.present();
+//! ```
+//!
+//! # Coordinate System
+//!
+//! The coordinate system uses (0, 0) as the top-left corner of the screen,
+//! with x increasing to the right and y increasing downward.
+
 extern crate alloc;
 use crate::graphics::color;
 use crate::libs::bmp::{BmpError, BmpImage};
@@ -5,28 +48,81 @@ use alloc::{vec, vec::Vec};
 use core::slice;
 use limine::framebuffer::Framebuffer;
 
+/// Represents a pixel coordinate in the framebuffer
+///
+/// The `Pixel` struct stores x and y coordinates as 64-bit unsigned integers.
+/// It provides methods for coordinate manipulation and implements the `PixelCoord` trait.
+///
+/// # Examples
+///
+/// ```
+/// use crate::graphics::core::Pixel;
+///
+/// let pixel = Pixel::new(100, 200);
+/// assert_eq!(pixel.x, 100);
+/// assert_eq!(pixel.y, 200);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pixel {
+    /// The x-coordinate (horizontal position)
     pub x: u64,
+    /// The y-coordinate (vertical position)
     pub y: u64,
 }
 
 impl Pixel {
+    /// Creates a new pixel with the given coordinates
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - The x-coordinate (horizontal position)
+    /// * `y` - The y-coordinate (vertical position)
+    ///
+    /// # Returns
+    ///
+    /// A new `Pixel` instance
     pub fn new(x: u64, y: u64) -> Self {
         Self { x, y }
     }
 }
 
+/// Trait for types that can be converted to pixel coordinates
+///
+/// This trait provides a common interface for converting various types
+/// to pixel coordinates in the form of `(x, y)` tuples.
 pub trait PixelCoord {
+    /// Converts the implementing type to pixel coordinates
+    ///
+    /// # Returns
+    ///
+    /// A tuple `(x, y)` representing the pixel coordinates
     fn to_coord(&self) -> (u64, u64);
 }
 
 impl PixelCoord for Pixel {
+    /// Converts a `Pixel` to its coordinate tuple
+    ///
+    /// # Returns
+    ///
+    /// A tuple `(x, y)` containing the pixel's coordinates
     fn to_coord(&self) -> (u64, u64) {
         (self.x, self.y)
     }
 }
 
+/// Macro for creating `Pixel` instances with concise syntax
+///
+/// This macro creates a `Pixel` instance from x and y coordinates,
+/// automatically converting them to `u64`.
+///
+/// # Examples
+///
+/// ```
+/// use crate::graphics::core::pixel;
+///
+/// let p1 = pixel!(10, 20);      // Creates Pixel { x: 10, y: 20 }
+/// let p2 = pixel!(100.5, 200);  // Creates Pixel { x: 100, y: 200 } (truncates float)
+/// ```
 #[macro_export]
 macro_rules! pixel {
     ($x:expr, $y:expr) => {{
@@ -34,22 +130,59 @@ macro_rules! pixel {
     }};
 }
 
+/// Double-buffered graphics renderer
+///
+/// The `Renderer` struct manages a framebuffer with double buffering to prevent
+/// screen tearing. All drawing operations are performed on a back buffer, and
+/// the `present()` method copies the back buffer to the front buffer (framebuffer).
+///
+/// # Lifetime
+///
+/// The renderer borrows a `Framebuffer` for its lifetime, ensuring the framebuffer
+/// outlives the renderer.
+///
+/// # Fields
+///
+/// * `framebuffer` - The front buffer (framebuffer) provided by the bootloader
+/// * `back_buffer` - The back buffer where all drawing operations are performed
+/// * `pixel_size` - Number of bytes per pixel (depends on framebuffer BPP)
+/// * `clear_color` - Default color used when clearing the screen
 pub struct Renderer<'a> {
-    framebuffer: Framebuffer<'a>, // 前台缓冲区
-    back_buffer: Vec<u8>,         // 后台缓冲区
-    pixel_size: usize,            // 每个像素占用的字节数
-    clear_color: color::Color,    // 默认清屏颜色
+    /// The front buffer (framebuffer) provided by the bootloader
+    framebuffer: Framebuffer<'a>,
+    /// The back buffer where all drawing operations are performed
+    back_buffer: Vec<u8>,
+    /// Number of bytes per pixel (depends on framebuffer BPP)
+    pixel_size: usize,
+    /// Default color used when clearing the screen
+    clear_color: color::Color,
 }
 
 impl<'a> Renderer<'a> {
+    /// Creates a new renderer with the given framebuffer
+    ///
+    /// Initializes a back buffer with the same dimensions as the framebuffer
+    /// and sets the default clear color to black.
+    ///
+    /// # Arguments
+    ///
+    /// * `framebuffer` - The framebuffer to render to
+    ///
+    /// # Returns
+    ///
+    /// A new `Renderer` instance
+    ///
+    /// # Panics
+    ///
+    /// Panics if the framebuffer's bits per pixel (BPP) is not 24 or 32
     pub fn new(framebuffer: Framebuffer<'a>) -> Self {
         let width = framebuffer.width() as usize;
         let height = framebuffer.height() as usize;
         let bpp = framebuffer.bpp() as usize; // bits per pixel
         let pixel_size = bpp / 8; // bytes per pixel
-        let buffer_size = width * height * pixel_size; // 后台缓冲区总字节数
+        let buffer_size = width * height * pixel_size; // Total bytes in back buffer
 
-        // 初始化后台缓冲区，填充为0（黑色）
+        // Initialize back buffer with zeros (black)
         let back_buffer = vec![0; buffer_size];
         Self {
             framebuffer: framebuffer,
@@ -59,15 +192,42 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// 获取后台缓冲区偏移
+    /// Calculates the byte offset in the back buffer for a given pixel coordinate
+    ///
+    /// The back buffer uses a linear layout (no pitch), unlike the framebuffer
+    /// which may have padding at the end of each scanline.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - The x-coordinate of the pixel
+    /// * `y` - The y-coordinate of the pixel
+    ///
+    /// # Returns
+    ///
+    /// The byte offset in the back buffer for the specified pixel
     #[inline(always)]
     fn get_buffer_offset(&self, x: u64, y: u64) -> usize {
-        // 后台缓冲区的布局是线性的，不一定与framebuffer的pitch相同
+        // Back buffer layout is linear, not necessarily matching framebuffer pitch
         y as usize * self.framebuffer.width() as usize * self.pixel_size
             + x as usize * self.pixel_size
     }
 
-    /// 转换颜色为帧缓冲区格式
+    /// Converts a color to the framebuffer's pixel format
+    ///
+    /// This method handles different framebuffer formats (24-bit and 32-bit)
+    /// by applying the appropriate color masks.
+    ///
+    /// # Arguments
+    ///
+    /// * `color` - The color to convert
+    ///
+    /// # Returns
+    ///
+    /// The color encoded in the framebuffer's pixel format
+    ///
+    /// # Panics
+    ///
+    /// Panics if the framebuffer's bits per pixel (BPP) is not 24 or 32
     #[inline(always)]
     fn mask_color(&self, color: &color::Color) -> u32 {
         if self.framebuffer.bpp() == 32 {
@@ -82,19 +242,28 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// 绘制像素到后台缓冲区
+    /// Draws a pixel to the back buffer at the specified coordinates
+    ///
+    /// This method performs bounds checking and supports alpha blending
+    /// for transparent colors.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - The x-coordinate of the pixel
+    /// * `y` - The y-coordinate of the pixel
+    /// * `color` - The color to draw
     #[inline(always)]
     fn set_pixel_raw(&mut self, x: u64, y: u64, color: &color::Color) {
-        // 边界检查：确保像素在屏幕范围内
+        // Bounds check: ensure pixel is within screen bounds
         if x < self.framebuffer.width() && y < self.framebuffer.height() {
             let offset = self.get_buffer_offset(x, y);
             let color_u32 = if color.a == 255 {
                 self.mask_color(color)
             } else if color.a > 0 {
-                // 读取后台缓冲区当前像素颜色进行alpha混合
+                // Read current pixel color from back buffer for alpha blending
                 let current_color = self.get_pixel_raw(x, y);
 
-                // 执行alpha混合: result = (source * alpha + destination * (255 - alpha)) / 255
+                // Perform alpha blending: result = (source * alpha + destination * (255 - alpha)) / 255
                 let alpha = color.a as u32;
                 let inv_alpha = 255 - alpha;
                 let r = (color.r as u32 * alpha + current_color.r as u32 * inv_alpha) / 255;
@@ -104,32 +273,57 @@ impl<'a> Renderer<'a> {
                 let mixed_color = color::Color::with_alpha(r as u8, g as u8, b as u8, 255);
                 self.mask_color(&mixed_color)
             } else {
-                // 纯透明,不绘制
+                // Fully transparent, don't draw
                 return;
             };
 
-            let pixel_bytes = color_u32.to_le_bytes(); // 转换为字节数组
-            let bytes_to_write = &pixel_bytes[..self.pixel_size]; // 取BPP对应的字节数
+            let pixel_bytes = color_u32.to_le_bytes(); // Convert to byte array
+            let bytes_to_write = &pixel_bytes[..self.pixel_size]; // Take bytes for BPP
             for i in 0..self.pixel_size {
                 self.back_buffer[offset + i] = bytes_to_write[i];
             }
         }
     }
 
-    /// 设置像素
+    /// Sets a pixel at the specified `Pixel` coordinate
+    ///
+    /// # Arguments
+    ///
+    /// * `pixel` - The pixel coordinate
+    /// * `color` - The color to set
     #[inline(always)]
     pub fn set_pixel(&mut self, pixel: Pixel, color: &color::Color) {
         let (x, y) = pixel.to_coord();
         self.set_pixel_raw(x, y, color);
     }
 
-    /// 获取像素
+    /// Gets the color of a pixel at the specified coordinate
+    ///
+    /// This method reads from the back buffer, which contains the most recent
+    /// drawing operations (not yet presented to the screen).
+    ///
+    /// # Arguments
+    ///
+    /// * `pixel` - The pixel coordinate to read
+    ///
+    /// # Returns
+    ///
+    /// The color of the pixel at the specified coordinate
     pub fn get_pixel(&self, pixel: Pixel) -> color::Color {
         let (x, y) = pixel.to_coord();
-        self.get_pixel_raw(x, y) // 从前台缓冲区获取
+        self.get_pixel_raw(x, y) // Read from back buffer
     }
 
-    /// 获取像素
+    /// Gets the color of a pixel at raw coordinates (internal method)
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - The x-coordinate
+    /// * `y` - The y-coordinate
+    ///
+    /// # Returns
+    ///
+    /// The color of the pixel at the specified coordinates
     fn get_pixel_raw(&self, x: u64, y: u64) -> color::Color {
         let offset = self.get_buffer_offset(x, y);
         let mut pixel_data_u32 = 0u32;
@@ -139,22 +333,35 @@ impl<'a> Renderer<'a> {
         color::Color::from_u32(pixel_data_u32)
     }
 
+    /// Sets the clear color used by the `clear()` method
+    ///
+    /// # Arguments
+    ///
+    /// * `color` - The new clear color
     pub fn set_clear_color(&mut self, color: color::Color) {
         self.clear_color = color;
     }
 
+    /// Gets the current clear color
+    ///
+    /// # Returns
+    ///
+    /// The current clear color
     pub fn get_clear_color(&self) -> color::Color {
         self.clear_color
     }
 
-    // 清空后台缓冲区
+    /// Clears the back buffer with the current clear color
+    ///
+    /// This method fills the entire back buffer with the clear color,
+    /// effectively erasing all previous drawing operations.
     pub fn clear(&mut self) {
         let width = self.framebuffer.width();
         let height = self.framebuffer.height();
         let color = self.clear_color.clone();
-        // 优化清空操作：直接填充后台缓冲区
+        // Optimized clear operation: directly fill back buffer
         let masked_clear_color = self.mask_color(&color);
-        let pixel_bytes = masked_clear_color.to_le_bytes(); // 转换为字节数组
+        let pixel_bytes = masked_clear_color.to_le_bytes(); // Convert to byte array
         let bytes_to_fill = &pixel_bytes[..self.pixel_size];
         for y in 0..height {
             for x in 0..width {
@@ -166,7 +373,16 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// 绘制线
+    /// Draws a line between two points using Bresenham's algorithm
+    ///
+    /// This method implements Bresenham's line algorithm with support for
+    /// steep lines (where |dy| > |dx|) and handles all octants.
+    ///
+    /// # Arguments
+    ///
+    /// * `p1` - The starting point of the line
+    /// * `p2` - The ending point of the line
+    /// * `color` - The color of the line
     pub fn draw_line(&mut self, p1: Pixel, p2: Pixel, color: color::Color) {
         let dx_abs = ((p2.x as i64 - p1.x as i64).abs()) as u64;
         let dy_abs = ((p2.y as i64 - p1.y as i64).abs()) as u64;
@@ -207,14 +423,34 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// 绘制三角形
+    /// Draws the outline of a triangle
+    ///
+    /// This method draws three lines connecting the three points to form
+    /// a triangle outline.
+    ///
+    /// # Arguments
+    ///
+    /// * `p1` - First vertex of the triangle
+    /// * `p2` - Second vertex of the triangle
+    /// * `p3` - Third vertex of the triangle
+    /// * `color` - The color of the triangle outline
     pub fn draw_triangle(&mut self, p1: Pixel, p2: Pixel, p3: Pixel, color: color::Color) {
         self.draw_line(p1, p2, color);
         self.draw_line(p2, p3, color);
         self.draw_line(p3, p1, color);
     }
 
-    /// 填充三角形
+    /// Fills a triangle with the specified color
+    ///
+    /// This method implements a scanline triangle filling algorithm that
+    /// handles both the top and bottom halves of the triangle separately.
+    ///
+    /// # Arguments
+    ///
+    /// * `p1` - First vertex of the triangle
+    /// * `p2` - Second vertex of the triangle
+    /// * `p3` - Third vertex of the triangle
+    /// * `color` - The fill color
     pub fn fill_triangle(&mut self, p1: Pixel, p2: Pixel, p3: Pixel, color: color::Color) {
         let (x1, y1) = p1.to_coord();
         let (x2, y2) = p2.to_coord();
@@ -310,27 +546,51 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// Gets the width of the framebuffer
+    ///
+    /// # Returns
+    ///
+    /// The width of the framebuffer in pixels
     pub fn width(&self) -> u64 {
         self.framebuffer.width()
     }
 
+    /// Gets the height of the framebuffer
+    ///
+    /// # Returns
+    ///
+    /// The height of the framebuffer in pixels
     pub fn height(&self) -> u64 {
         self.framebuffer.height()
     }
 
-    /// 绘制矩形
+    /// Draws the outline of a rectangle
+    ///
+    /// # Arguments
+    ///
+    /// * `pixel` - The top-left corner of the rectangle
+    /// * `width` - The width of the rectangle
+    /// * `height` - The height of the rectangle
+    /// * `color` - The color of the rectangle outline
     pub fn draw_rect(&mut self, pixel: Pixel, width: u64, height: u64, color: color::Color) -> () {
         let (x, y) = pixel.to_coord();
         let x2 = x + width;
         let y2 = y + height;
-        // 绘制到后台缓冲区
+        // Draw to back buffer
         self.draw_line(pixel!(x, y), pixel!(x2, y), color);
         self.draw_line(pixel!(x2, y), pixel!(x2, y2), color);
         self.draw_line(pixel!(x2, y2), pixel!(x, y2), color);
         self.draw_line(pixel!(x, y2), pixel!(x, y), color);
     }
 
-    /// 填充矩形
+    /// Fills a rectangle with the specified color
+    ///
+    /// # Arguments
+    ///
+    /// * `pixel` - The top-left corner of the rectangle
+    /// * `width` - The width of the rectangle
+    /// * `height` - The height of the rectangle
+    /// * `color` - The fill color
     pub fn fill_rect(&mut self, pixel: Pixel, width: u64, height: u64, color: color::Color) {
         let (x_min, y_min) = pixel.to_coord();
         let x_max = x_min + width;
@@ -341,39 +601,65 @@ impl<'a> Renderer<'a> {
         let y_end = y_max.min(self.height() - 1);
         for y in y_start..=y_end {
             for x in x_start..=x_end {
-                self.set_pixel_raw(x, y, &color); // 绘制到后台缓冲区
+                self.set_pixel_raw(x, y, &color); // Draw to back buffer
             }
         }
     }
 
-    /// 绘制任意多边形（轮廓）
+    /// Draws the outline of a polygon
+    ///
+    /// This method connects all points in sequence to form a closed polygon.
+    /// The last point is automatically connected back to the first point.
+    ///
+    /// # Arguments
+    ///
+    /// * `points` - A slice of `Pixel` points defining the polygon vertices
+    /// * `color` - The color of the polygon outline
+    ///
+    /// # Note
+    ///
+    /// If there are fewer than 3 points, the method returns without drawing anything.
     pub fn draw_polygon(&mut self, points: &[Pixel], color: color::Color) {
         if points.len() < 3 {
-            return; // 少于3个点无法构成多边形
+            return; // Cannot form a polygon with fewer than 3 points
         }
-        // 连接所有点形成闭合多边形
+        // Connect all points to form a closed polygon
         for i in 0..points.len() {
             let p1 = points[i];
-            let p2 = points[(i + 1) % points.len()]; // 最后一个点连接回第一个点
+            let p2 = points[(i + 1) % points.len()]; // Last point connects back to first
             self.draw_line(p1, p2, color);
         }
     }
-    /// 填充任意凸多边形（扫描线算法）
+    /// Fills a convex polygon using a scanline algorithm
+    ///
+    /// This method implements a scanline polygon filling algorithm that works
+    /// specifically for convex polygons. It calculates intersections with each
+    /// scanline and fills between pairs of intersections.
+    ///
+    /// # Arguments
+    ///
+    /// * `points` - A slice of `Pixel` points defining the convex polygon vertices
+    /// * `color` - The fill color
+    ///
+    /// # Note
+    ///
+    /// This method is optimized for convex polygons. For concave polygons,
+    /// use `fill_polygon()` which implements the even-odd rule.
     pub fn fill_convex_polygon(&mut self, points: &[Pixel], color: color::Color) {
         if points.len() < 3 {
-            return; // 少于3个点无法构成多边形
+            return; // Cannot form a polygon with fewer than 3 points
         }
-        // 收集所有边的信息
+        // Collect information about all edges
         let mut edges = Vec::new();
         for i in 0..points.len() {
             let p1 = points[i];
             let p2 = points[(i + 1) % points.len()];
             edges.push((p1, p2));
         }
-        // 找到多边形的y范围
+        // Find the y-range of the polygon
         let min_y = edges.iter().map(|&(p, _)| p.y).min().unwrap_or(0);
         let max_y = edges.iter().map(|&(p, _)| p.y).max().unwrap_or(0);
-        // 计算每一条边的x增量信息
+        // Calculate x-increment information for each edge
         let mut edge_info: Vec<(f64, f64, f64, f64)> = Vec::new();
         for &(p1, p2) in &edges {
             if p1.y != p2.y {
@@ -388,20 +674,20 @@ impl<'a> Renderer<'a> {
                 edge_info.push((y_start, y_end, x_start, dx));
             }
         }
-        // 扫描线填充
+        // Scanline filling
         for y in min_y..=max_y {
             let mut intersections = Vec::new();
 
-            // 计算当前扫描线y与所有边的交点
+            // Calculate intersections of current scanline y with all edges
             for &(y_start, y_end, x_start, dx) in &edge_info {
                 if (y as f64) >= y_start && (y as f64) <= y_end {
                     let x = x_start + (y as f64 - y_start) * dx;
                     intersections.push(x);
                 }
             }
-            // 交点排序
+            // Sort intersections
             intersections.sort_by(|a, b| a.partial_cmp(b).expect("Float comparison failed"));
-            // 填充扫描线交点之间的区域
+            // Fill between pairs of intersections
             for i in (0..intersections.len()).step_by(2) {
                 if i + 1 >= intersections.len() {
                     break;
@@ -420,15 +706,30 @@ impl<'a> Renderer<'a> {
             }
         }
     }
-    /// 填充任意多边形（使用奇偶规则）
+    /// Fills any polygon (convex or concave) using the even-odd rule
+    ///
+    /// This method implements a scanline polygon filling algorithm that works
+    /// for both convex and concave polygons using the even-odd rule to determine
+    /// which pixels are inside the polygon.
+    ///
+    /// # Arguments
+    ///
+    /// * `points` - A slice of `Pixel` points defining the polygon vertices
+    /// * `color` - The fill color
+    ///
+    /// # Algorithm
+    ///
+    /// The even-odd rule determines whether a point is inside a polygon by
+    /// drawing a ray from the point to infinity and counting how many times
+    /// it crosses the polygon boundary. If the count is odd, the point is inside.
     pub fn fill_polygon(&mut self, points: &[Pixel], color: color::Color) {
         if points.len() < 3 {
             return;
         }
-        // 找到多边形的y范围
+        // Find the y-range of the polygon
         let min_y = points.iter().map(|p| p.y).min().unwrap_or(0);
         let max_y = points.iter().map(|p| p.y).max().unwrap_or(0);
-        // 收集所有边的信息
+        // Collect information about all edges
         let mut edge_table = Vec::new();
         for i in 0..points.len() {
             let p1 = points[i];
@@ -440,11 +741,11 @@ impl<'a> Renderer<'a> {
                 edge_table.push((start.y as f64, end.y as f64, start.x as f64, dx));
             }
         }
-        // 扫描线填充
+        // Scanline filling
         for y in min_y..=max_y {
             let mut intersections = Vec::new();
 
-            // 检查每条边是否与当前扫描线相交
+            // Check if each edge intersects with the current scanline
             for &(y_min, y_max, mut x, dx) in &edge_table {
                 if (y as f64) >= y_min && (y as f64) < y_max {
                     if y as f64 > y_min {
@@ -453,15 +754,15 @@ impl<'a> Renderer<'a> {
                     intersections.push(x);
                 }
             }
-            // 交点排序
+            // Sort intersections
             intersections.sort_by(|a, b| a.partial_cmp(b).expect("Float comparison failed"));
-            // 填充扫描线交点之间的区域（奇偶规则）
+            // Fill between intersections using even-odd rule
             let mut inside = false;
             for i in 0..intersections.len() {
                 if inside && i < intersections.len() {
                     let start_x = intersections[i].max(0.0).min(self.width() as f64 - 1.0) as u64;
 
-                    // 确保不会越界访问
+                    // Ensure we don't access out of bounds
                     if i + 1 < intersections.len() {
                         let end_x =
                             intersections[i + 1].max(0.0).min(self.width() as f64 - 1.0) as u64;
@@ -472,7 +773,7 @@ impl<'a> Renderer<'a> {
                             }
                         }
                     } else {
-                        // 处理最后一个点
+                        // Handle the last point
                         let end_x = self.width().min(self.width() - 1);
                         if start_x <= end_x {
                             for x in start_x..=end_x {
@@ -486,7 +787,15 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// 绘制BMP图像
+    /// Draws a BMP image at the specified position
+    ///
+    /// This method draws the BMP image pixel by pixel at the given position.
+    /// The image is drawn at its original size without scaling.
+    ///
+    /// # Arguments
+    ///
+    /// * `pos` - The top-left position where to draw the image
+    /// * `bmp` - The BMP image to draw
     pub fn draw_bmp(&mut self, pos: Pixel, bmp: &BmpImage) {
         let (x_start, y_start) = (pos.x, pos.y);
 
@@ -498,35 +807,65 @@ impl<'a> Renderer<'a> {
             }
         }
     }
-    /// 绘制BMP图像 (带缩放)
+    /// Draws a BMP image with scaling
+    ///
+    /// This method draws the BMP image scaled by the specified factors.
+    /// Nearest-neighbor interpolation is used for scaling.
+    ///
+    /// # Arguments
+    ///
+    /// * `pos` - The top-left position where to draw the image
+    /// * `bmp` - The BMP image to draw
+    /// * `scale_x` - Horizontal scaling factor (1.0 = original size)
+    /// * `scale_y` - Vertical scaling factor (1.0 = original size)
     pub fn draw_bmp_scaled(&mut self, pos: Pixel, bmp: &BmpImage, scale_x: f32, scale_y: f32) {
         let scaled_width = (bmp.width() as f32 * scale_x) as u64;
         let scaled_height = (bmp.height() as f32 * scale_y) as u64;
+        let (x_start, y_start) = pos.to_coord();
 
         for y in 0..scaled_height {
             for x in 0..scaled_width {
-                // 计算原始图像中的对应位置
+                // Calculate source coordinates using nearest-neighbor interpolation
                 let src_x = (x as f32 / scale_x) as u32;
                 let src_y = (y as f32 / scale_y) as u32;
 
-                if let Some(color) = bmp.pixel(src_x, src_y) {
-                    self.set_pixel_raw(pos.x + x, pos.y + y, &color);
+                if src_x < bmp.width() && src_y < bmp.height() {
+                    if let Some(color) = bmp.pixel(src_x, src_y) {
+                        self.set_pixel_raw(x_start + x, y_start + y, &color);
+                    }
                 }
             }
         }
     }
-    /// 绘制BMP图像 (扭曲变形)
+    /// Draws a BMP image with distortion to fit a quadrilateral
+    ///
+    /// This method draws a BMP image distorted to fit the specified quadrilateral
+    /// defined by four corner points. It uses bilinear interpolation to map
+    /// source image coordinates to destination coordinates.
+    ///
+    /// # Arguments
+    ///
+    /// * `corners` - An array of four `Pixel` points defining the quadrilateral corners
+    ///   in clockwise or counter-clockwise order
+    /// * `bmp` - The BMP image to draw
+    ///
+    /// # Algorithm
+    ///
+    /// The method calculates the bounding box of the quadrilateral and uses
+    /// simplified bilinear interpolation to map each destination pixel to
+    /// a source pixel in the BMP image.
     pub fn draw_bmp_distorted(&mut self, corners: [Pixel; 4], bmp: &BmpImage) {
-        // 计算包围盒
+        // Calculate bounding box
         let min_x = corners.iter().map(|p| p.x).min().unwrap_or(0);
         let max_x = corners.iter().map(|p| p.x).max().unwrap_or(0);
         let min_y = corners.iter().map(|p| p.y).min().unwrap_or(0);
         let max_y = corners.iter().map(|p| p.y).max().unwrap_or(0);
 
-        // 计算变换矩阵 (简化的双线性插值)
+        // Calculate transformation matrix (simplified bilinear interpolation)
         for y in min_y..=max_y {
             for x in min_x..=max_x {
-                // 计算相对位置 (简化版，实际应该使用更精确的纹理映射)
+                // Calculate relative position (simplified version, actual implementation
+                // should use more precise texture mapping)
                 let u = (x - min_x) as f32 / (max_x - min_x) as f32;
                 let v = (y - min_y) as f32 / (max_y - min_y) as f32;
 
@@ -539,14 +878,67 @@ impl<'a> Renderer<'a> {
             }
         }
     }
-    /// 从字节加载并绘制BMP图像
+    /// Loads and draws a BMP image from raw byte data
+    ///
+    /// This method parses raw BMP image data from a byte slice and draws it
+    /// at the specified position. It handles BMP parsing errors and returns
+    /// them to the caller.
+    ///
+    /// # Arguments
+    ///
+    /// * `pos` - The top-left position where to draw the image
+    /// * `data` - Raw byte data containing the BMP image
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - If the BMP image was successfully parsed and drawn
+    /// * `Err(BmpError)` - If there was an error parsing the BMP data
+    ///
+    /// # Errors
+    ///
+    /// This method can return various `BmpError` variants if the BMP data
+    /// is malformed or unsupported.
     pub fn draw_bmp_from_bytes(&mut self, pos: Pixel, data: &[u8]) -> Result<(), BmpError> {
         let bmp = BmpImage::from_bytes(data)?;
         self.draw_bmp(pos, &bmp);
         Ok(())
     }
 
-    /// 绘制圆形
+    /// Draws a circle with the specified center, radius, and color
+    ///
+    /// This method implements Bresenham's circle algorithm to draw a circle
+    /// outline efficiently using only integer arithmetic. The algorithm draws
+    /// 8 symmetric points for each calculated point to complete the circle.
+    ///
+    /// # Arguments
+    ///
+    /// * `center` - The center point of the circle
+    /// * `radius` - The radius of the circle in pixels
+    /// * `color` - The color of the circle outline
+    ///
+    /// # Algorithm
+    ///
+    /// The algorithm uses Bresenham's circle drawing algorithm which works by:
+    /// 1. Starting at point (0, radius)
+    /// 2. Calculating the decision parameter `d`
+    /// 3. Iteratively determining the next pixel position
+    /// 4. Drawing 8 symmetric points for each calculated position
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::graphics::core::{Renderer, pixel};
+    /// use crate::graphics::color::RED;
+    ///
+    /// // Assuming renderer is initialized
+    /// # let framebuffer = unsafe { core::mem::zeroed() };
+    /// # let mut renderer = Renderer::new(framebuffer);
+    /// renderer.draw_circle(pixel!(100, 100), 50, RED);
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// If radius is 0, the method returns immediately without drawing anything.
     pub fn draw_circle(&mut self, center: Pixel, radius: u64, color: color::Color) {
         if radius == 0 {
             return;
@@ -578,7 +970,59 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// 将后台缓冲区的内容复制到前台帧缓冲区，从而显示绘制结果。
+    /// Presents the back buffer to the front buffer (framebuffer)
+    ///
+    /// This method copies the contents of the back buffer to the front buffer,
+    /// making all drawing operations visible on the screen. This is the final
+    /// step in the double-buffering rendering pipeline.
+    ///
+    /// # How It Works
+    ///
+    /// The method performs a row-by-row copy from the back buffer to the
+    /// framebuffer, handling potential differences in pitch (bytes per row)
+    /// between the two buffers. The back buffer uses a linear layout with
+    /// no padding, while the framebuffer may have padding at the end of each
+    /// scanline.
+    ///
+    /// # Safety
+    ///
+    /// This method uses unsafe code to directly access the framebuffer memory.
+    /// It assumes:
+    /// 1. The framebuffer address is valid and points to writable memory
+    /// 2. The framebuffer dimensions and pitch are correctly reported by the bootloader
+    /// 3. The back buffer has been properly initialized with the correct size
+    ///
+    /// # Performance
+    ///
+    /// This is a relatively expensive operation as it copies the entire
+    /// framebuffer contents. For optimal performance, minimize the number of
+    /// `present()` calls by batching drawing operations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::graphics::core::{Renderer, pixel};
+    /// use crate::graphics::color::{RED, BLUE, GREEN};
+    ///
+    /// // Assuming renderer is initialized
+    /// # let framebuffer = unsafe { core::mem::zeroed() };
+    /// # let mut renderer = Renderer::new(framebuffer);
+    ///
+    /// // Perform drawing operations
+    /// renderer.clear();
+    /// renderer.draw_line(pixel!(10, 10), pixel!(100, 100), RED);
+    /// renderer.fill_rect(pixel!(50, 50), 80, 60, BLUE);
+    /// renderer.draw_circle(pixel!(200, 150), 40, GREEN);
+    ///
+    /// // Make everything visible on screen
+    /// renderer.present();
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// This method should be called after completing all drawing operations
+    /// for a frame. Calling it multiple times per frame may cause screen tearing
+    /// or reduced performance.
     pub fn present(&mut self) {
         let width = self.framebuffer.width() as usize;
         let height = self.framebuffer.height() as usize;

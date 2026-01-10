@@ -1,8 +1,57 @@
 //! # Proka Kernel - A kernel for ProkaOS
+//!
+//! This is the main library crate for the Proka kernel, providing the core functionality
+//! for ProkaOS. The kernel is designed to be modular, extensible, and follows modern
+//! operating system design principles.
+//!
 //! Copyright (C) RainSTR Studio 2025, All rights reserved.
 //!
-//! This provides the public functions, and they will help you
-//! to use the kernel functions easily.
+//! ## Overview
+//!
+//! The Proka kernel provides:
+//! - Memory management (paging, frame allocation, heap allocation)
+//! - Device drivers (block, character, input devices)
+//! - File system support (VFS, in-memory FS, kernel FS)
+//! - Graphics and display output
+//! - Interrupt handling (APIC, PIC, IDT, GDT)
+//! - System libraries (logger, BMP parser, initrd, MSR access)
+//! - Output mechanisms (console, serial, dual output)
+//!
+//! ## Modules
+//!
+//! - [`drivers`] - Device drivers for various hardware components
+//! - [`fs`] - File system implementations and virtual file system
+//! - [`graphics`] - Graphics and display functionality
+//! - [`interrupts`] - Interrupt handling and processor control
+//! - [`libs`] - Utility libraries and helpers
+//! - [`memory`] - Memory management and allocation
+//! - [`output`] - Output mechanisms for kernel messages
+//! - [`mod@panic`] - Panic handling and reporting
+//! - [`mod@test`] - Testing framework and utilities
+//!
+//! ## Usage
+//!
+//! To use this kernel in your OS project:
+//!
+//! ```rust
+//! use proka_kernel::*;
+//!
+//! // Initialize kernel subsystems
+//! init_frame_allocator();
+//! init_offset_page_table();
+//! // ... other initialization
+//! ```
+//!
+//! ## Safety
+//!
+//! This kernel uses `#![no_std]` and contains unsafe code for low-level operations.
+//! Proper synchronization and memory safety must be ensured by the caller when
+//! using unsafe APIs.
+//!
+//! ## Examples
+//!
+//! See the individual module documentation for specific examples of using each
+//! kernel subsystem.
 
 #![no_std]
 #![cfg_attr(test, no_main)]

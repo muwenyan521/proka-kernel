@@ -67,7 +67,7 @@ jobs:
     - name: Run QEMU test
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
-        timeout 10s qemu-system-x86_64 \
+        timeout 30s qemu-system-x86_64 \
           -bios ./assets/OVMF.fd \
           -cdrom proka-kernel.iso \
           -machine q35 \

@@ -19,6 +19,14 @@ use x86_64::{
 /// Retrieve the HHDM (Higher Half Direct Map) offset from Limine
 ///
 /// This offset is used to map physical memory into virtual address space.
+/// The HHDM offset allows direct access to physical memory by adding this
+/// offset to physical addresses.
+///
+/// # Returns
+/// * `VirtAddr` - The virtual address offset for direct physical memory mapping
+///
+/// # Panics
+/// * Panics if the HHDM request fails to get a response from the bootloader
 pub fn get_hhdm_offset() -> VirtAddr {
     VirtAddr::new(
         crate::HHDM_REQUEST
@@ -30,8 +38,14 @@ pub fn get_hhdm_offset() -> VirtAddr {
 
 /// Initialize an OffsetPageTable for accessing page tables
 ///
+/// Creates an `OffsetPageTable` that can be used to manipulate page tables.
+/// This is the primary interface for memory mapping operations in the kernel.
+///
 /// # Arguments
 /// * `physical_memory_offset` - The HHDM offset returned by bootloader
+///
+/// # Returns
+/// * `OffsetPageTable<'static>` - A page table manager for memory operations
 ///
 /// # Safety
 /// This function is unsafe because the caller must guarantee that:
@@ -44,7 +58,17 @@ pub unsafe fn init_offset_page_table(physical_memory_offset: VirtAddr) -> Offset
     }
 }
 
-/// Returns a mutable reference to the active level 4 table.
+/// Returns a mutable reference to the active level 4 page table.
+///
+/// This function reads the CR3 register to find the physical address of
+/// the level 4 page table, then maps it to a virtual address using the
+/// HHDM offset.
+///
+/// # Arguments
+/// * `physical_memory_offset` - The HHDM offset for physical memory mapping
+///
+/// # Returns
+/// * `&'static mut PageTable` - Mutable reference to the active level 4 page table
 ///
 /// # Safety
 /// This function is unsafe because the caller must guarantee that:
@@ -62,8 +86,15 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 
 /// Create a buddy system based frame allocator with deallocation support
 ///
+/// Initializes the global frame allocator using the memory map provided by
+/// the bootloader. The allocator will mark all usable memory regions as
+/// available for allocation.
+///
 /// # Arguments
 /// * `memory_map` - The memory map from Limine bootloader
+///
+/// # Returns
+/// * `LockedFrameAllocator` - Thread-safe frame allocator instance
 ///
 /// # Safety
 /// This function is unsafe because the caller must guarantee that:
@@ -73,10 +104,25 @@ pub unsafe fn init_frame_allocator(memory_map: &'static MemoryMapResponse) -> Lo
     LockedFrameAllocator::init(memory_map)
 }
 
-/// Print memory statistics
+/// Print memory statistics to the kernel log
+///
+/// Displays detailed memory usage information including total, used, and free
+/// memory in both frame counts and human-readable byte formats.
 ///
 /// # Arguments
-/// * `frame_allocator` - The frame allocator to query
+/// * `frame_allocator` - The frame allocator to query for statistics
+///
+/// # Example Output
+/// ```text
+/// === Memory Statistics ===
+/// Total frames:    16384
+/// Used frames:     512
+/// Free frames:     15872
+/// Total memory:    64 MiB
+/// Used memory:     2 MiB
+/// Free memory:     62 MiB
+/// Usage:           3%
+/// ```
 pub fn print_memory_stats(frame_allocator: &LockedFrameAllocator) {
     let stats = frame_allocator.stats();
 
@@ -95,11 +141,14 @@ pub fn print_memory_stats(frame_allocator: &LockedFrameAllocator) {
 
 /// Get memory statistics
 ///
+/// Retrieves detailed memory usage information without printing it to the log.
+/// This is useful for programmatic access to memory statistics.
+///
 /// # Arguments
 /// * `frame_allocator` - The frame allocator to query
 ///
 /// # Returns
-/// * FrameStats containing memory usage information
+/// * `FrameStats` - Structure containing detailed memory usage information
 pub fn get_memory_stats(frame_allocator: &LockedFrameAllocator) -> FrameStats {
     frame_allocator.stats()
 }
