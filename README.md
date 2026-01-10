@@ -2,7 +2,8 @@
 
 **Copyright (C) 2025 RainSTR Studio. All rights reserved.**
 
----
+[![Build](https://github.com/RainSTR-Studio/proka-kernel/actions/workflows/build.yml/badge.svg)](https://github.com/RainSTR-Studio/proka-kernel/actions/workflows/build.yml)
+
 
 Welcome to Proka Kernel, an operating system kernel developed by young talents at RainSTR Studio.
 Primarily for learning and practice, our goal is to evolve it into a stable and reliable system.

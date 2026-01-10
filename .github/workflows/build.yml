@@ -1,0 +1,92 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: nightly
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ env.RUST_TOOLCHAIN }}
+        targets: x86_64-unknown-none
+        components: rust-src, rustfmt
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          xorriso \
+          cpio \
+          nasm \
+          gcc \
+          make \
+          qemu-system-x86
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Build ISO image
+      run: |
+        set -e
+        make iso
+        ls -lh proka-kernel.iso
+
+    - name: Upload ISO artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: proka-kernel-iso
+        path: proka-kernel.iso
+        retention-days: 30
+        if-no-files-found: error
+
+    - name: Run QEMU test
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        timeout 10s qemu-system-x86_64 \
+          -bios ./assets/OVMF.fd \
+          -cdrom proka-kernel.iso \
+          -machine q35 \
+          -m 1G \
+          -serial stdio \
+          -display none \
+          -no-reboot \
+          -no-shutdown 2>&1 | head -50 || true
+        
+    - name: Build summary
+      if: always()
+      run: |
+        echo "=== Build Summary ==="
+        echo "Workflow: ${{ github.workflow }}"
+        echo "Run ID: ${{ github.run_id }}"
+        echo "Commit: ${{ github.sha }}"
+        if [ -f proka-kernel.iso ]; then
+          echo "ISO built: YES"
+          echo "ISO size: $(stat -c%s proka-kernel.iso) bytes"
+        else
+          echo "ISO built: NO"
+        fi
