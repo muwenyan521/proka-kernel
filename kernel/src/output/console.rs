@@ -11,7 +11,6 @@ use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use alloc::{string::String, vec, vec::Vec};
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
-use libm::ceilf;
 use spin::Mutex;
 
 pub const DEFAULT_FONT_SIZE: f32 = 12.0;
@@ -183,8 +182,8 @@ impl<'a> Console<'a> {
         let g = g_id.with_scale(self.scale);
         let bound = self.font.glyph_bounds(&g);
 
-        self.font_width = ceilf(bound.width()) as u32;
-        self.font_height = ceilf(font_line_height) as u32;
+        self.font_width = libm::ceilf(bound.width()) as u32;
+        self.font_height = libm::ceilf(font_line_height) as u32;
 
         self.width_chars = self
             .renderer
@@ -403,6 +402,7 @@ impl<'a> Console<'a> {
 
             // 优化浮点数到整数转换，避免在循环内部重复计算round
             // 对于每个像素，c是alpha值，我们只在c > 0.0 时进行绘制
+            //let st = crate::libs::time::time_since_boot();
             glyph.draw(|x, y, c| {
                 if c == 0.0 {
                     return;
@@ -425,6 +425,8 @@ impl<'a> Console<'a> {
                     &fg_color.mix_alpha(alpha),
                 );
             });
+            //let et = crate::libs::time::time_since_boot();
+            //serial_println!("draw_char_to_screen_at_px: {}", et - st);
         }
     }
 

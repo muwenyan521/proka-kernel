@@ -52,14 +52,13 @@ pub extern "C" fn kernel_main() -> ! {
         .expect("Failed to initialize heap");
 
     init_devices();
+
+    proka_kernel::libs::time::init(); // Init time system
     proka_kernel::libs::logger::init_logger(); // Init log system
 
     proka_kernel::output::console::CONSOLE
         .lock()
         .cursor_hidden();
-
-    info!("Heap initialized");
-    info!("Paging initialized");
 
     // Print memory statistics
     proka_kernel::memory::paging::print_memory_stats(&frame_allocator);
