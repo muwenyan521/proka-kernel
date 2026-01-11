@@ -47,6 +47,13 @@ impl Console {
             self.position.0 += FONT_W;
         }
 
+        // If character is "\n", just switch to next line.
+        if c == ('\n' as usize) {
+            self.position.1 += FONT_H;  // Next line
+            self.position.0 = 0;        // X pos reset
+            return;
+        }
+
         let start_x = self.position.0;
         let start_y = self.position.1;
 
