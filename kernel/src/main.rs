@@ -98,6 +98,10 @@ pub extern "C" fn kernel_main() -> ! {
         core::str::from_utf8(&buf[..len]).unwrap()
     );
 
+    for _ in 0..20 {
+        println!("Hello world");
+    }
+
     loop {
         let mut buf = [0u8; 1];
         let kbd_device = {

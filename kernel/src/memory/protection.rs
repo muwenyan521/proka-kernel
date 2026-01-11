@@ -25,9 +25,7 @@ impl Protection {
     /// Convert protection to x86_64 page table flags
     pub fn to_flags(self) -> PageTableFlags {
         match self {
-            Protection::ReadExecute => {
-                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE
-            }
+            Protection::ReadExecute => PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
             Protection::Read => {
                 PageTableFlags::PRESENT
                     | PageTableFlags::USER_ACCESSIBLE
@@ -48,7 +46,13 @@ impl Protection {
 
     /// Check if protection allows reading
     pub fn can_read(self) -> bool {
-        matches!(self, Protection::Read | Protection::ReadWrite | Protection::ReadExecute | Protection::ReadWriteExecute)
+        matches!(
+            self,
+            Protection::Read
+                | Protection::ReadWrite
+                | Protection::ReadExecute
+                | Protection::ReadWriteExecute
+        )
     }
 
     /// Check if protection allows writing

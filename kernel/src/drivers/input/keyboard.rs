@@ -45,9 +45,7 @@ impl Keyboard {
     }
 
     pub fn is_enabled(&self) -> bool {
-        x86_64::instructions::interrupts::without_interrupts(|| {
-            self.inner.lock().enabled
-        })
+        x86_64::instructions::interrupts::without_interrupts(|| self.inner.lock().enabled)
     }
 
     pub fn handle_scancode(&self, scancode: u8) {

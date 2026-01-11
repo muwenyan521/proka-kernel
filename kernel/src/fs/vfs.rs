@@ -114,11 +114,7 @@ pub trait Inode: Send + Sync {
         Err(VfsError::NotImplemented)
     }
 
-    fn create_device(
-        &self,
-        name: &str,
-        device: Arc<Device>,
-    ) -> Result<Arc<dyn Inode>, VfsError> {
+    fn create_device(&self, name: &str, device: Arc<Device>) -> Result<Arc<dyn Inode>, VfsError> {
         let _ = (name, device);
         Err(VfsError::NotImplemented)
     }
@@ -342,10 +338,14 @@ impl Vfs {
         let device_manager = DEVICE_MANAGER.read();
         let device = device_manager
             .get_device_by_major_minor(major, minor)
-            .ok_or(VfsError::DeviceError(crate::drivers::DeviceError::NoSuchDevice))?;
+            .ok_or(VfsError::DeviceError(
+                crate::drivers::DeviceError::NoSuchDevice,
+            ))?;
 
         if device.device_type() != device_type {
-            return Err(VfsError::DeviceError(crate::drivers::DeviceError::InvalidParam));
+            return Err(VfsError::DeviceError(
+                crate::drivers::DeviceError::InvalidParam,
+            ));
         }
 
         parent_inode.create_device(name, device)

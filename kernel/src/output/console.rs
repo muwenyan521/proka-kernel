@@ -1,5 +1,6 @@
-use crate::FRAMEBUFFER_REQUEST;
+extern crate alloc;
 use crate::output::font8x16::FONT8X16;
+use crate::FRAMEBUFFER_REQUEST;
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -13,14 +14,16 @@ lazy_static! {
     pub static ref CONSOLE: Mutex<Console> = Mutex::new(Console::init());
 }
 
+/// The object of console.
 pub struct Console {
     address: *mut u8,
     width: u64,
     height: u64,
     pitch: u64,
-    position: (u64, u64)    // (x, y)
+    position: (u64, u64), // (x, y)
 }
 
+// We have to do it, so that it can be contained by Mutex.
 unsafe impl Send for Console {}
 unsafe impl Sync for Console {}
 
@@ -37,23 +40,35 @@ impl Console {
         }
     }
 
-    fn print_char(&mut self, c: usize) {
-        // Compute the current position
-        // If over than self.width, switch to next line.
-        if (self.position.0 + FONT_W) >= self.width {
-            self.position.1 += FONT_H;  // todo handle stroll
-            self.position.0 = 0;
-        } else {
-            self.position.0 += FONT_W;
-        }
+    fn scroll_up(&mut self) {
+        use crate::serial_println;
+        serial_println!("test");
+        /* TODO: Implement scroll up*/
+    }
 
+    fn print_char(&mut self, c: usize) {
         // If character is "\n", just switch to next line.
         if c == ('\n' as usize) {
-            self.position.1 += FONT_H;  // Next line
-            self.position.0 = 0;        // X pos reset
+            self.position.0 = 0;
+            if (self.position.1 + FONT_H) >= self.height {
+                self.scroll_up();
+            } else {
+                self.position.1 += FONT_H;
+            }
             return;
         }
 
+        // If over than self.width, switch to next line.
+        if self.position.0 + FONT_W > self.width {
+            self.position.0 = 0;
+            if (self.position.1 + FONT_H) >= self.height {
+                self.scroll_up();
+            } else {
+                self.position.1 += FONT_H;
+            }
+        }
+
+        // Compute the current position
         let start_x = self.position.0;
         let start_y = self.position.1;
 
@@ -66,20 +81,23 @@ impl Console {
                     // Write white pixel
                     // Compute current pixel offset
                     let x = start_x + i;
-                    let y  = start_y + line;
-                    let pixel_offset = y * self.pitch + x * 4;
+                    let y = start_y + line;
+                    if x < self.width && y < self.height {
+                        let pixel_offset = y * self.pitch + x * 4;
 
-                    // Write
-                    unsafe {
-                    self.address
-                        .add(pixel_offset as usize)
-                        .cast::<u32>()
-                        .write(0xFFFFFFFF);
+                        // Write
+                        unsafe {
+                            self.address
+                                .add(pixel_offset as usize)
+                                .cast::<u32>()
+                                .write(0xFFFFFFFF);
+                        }
                     }
-
                 }
             }
         }
+
+        self.position.0 += FONT_W;
     }
 
     pub fn print_string(&mut self, s: &str) {
