@@ -54,10 +54,6 @@ pub extern "C" fn kernel_main() -> ! {
     init_devices();
     proka_kernel::libs::logger::init_logger(); // Init log system
 
-    proka_kernel::output::console::CONSOLE
-        .lock()
-        .cursor_hidden();
-
     info!("Heap initialized");
     info!("Paging initialized");
 
