@@ -47,17 +47,19 @@ impl Console {
             self.position.0 += FONT_W;
         }
 
+        let start_x = self.position.0;
+        let start_y = self.position.1;
+
         // Write pixel
-        let mut pixel_position = self.position;
         for line in 0..FONT_H {
-            let line = FONT8X16[c][line as usize];
             for i in 0..FONT_W {
                 let mask = 0x80 >> i;
-                if line & mask != 0 {
+
+                if FONT8X16[c][line as usize] & mask != 0 {
                     // Write white pixel
                     // Compute current pixel offset
-                    let x = pixel_position.0;
-                    let y = pixel_position.1;
+                    let x = start_x + i;
+                    let y  = start_y + line;
                     let pixel_offset = y * self.pitch + x * 4;
 
                     // Write
@@ -68,14 +70,8 @@ impl Console {
                         .write(0xFFFFFFFF);
                     }
 
-                    // To next pixel
-                    pixel_position.0 += 1;
-                } else {
-                    // No writing
-                    pixel_position.0 += 1;
                 }
             }
-            pixel_position.1 += 1;
         }
     }
 
