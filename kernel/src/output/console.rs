@@ -15,8 +15,8 @@ lazy_static! {
 
 pub struct Console {
     address: *mut u8,
-    width: u64,  // For charactor
-    height: u64, // For charactor
+    width: u64,
+    height: u64,
     pitch: u64,
     position: (u64, u64)    // (x, y)
 }
@@ -30,8 +30,8 @@ impl Console {
         let framebuffer = framebuffer_response.framebuffers().next().unwrap();
         Self {
             address: framebuffer.addr(),
-            width: framebuffer.width() / FONT_W,
-            height: framebuffer.height() / FONT_H,
+            width: framebuffer.width(),
+            height: framebuffer.height(),
             pitch: framebuffer.pitch(),
             position: (0, 0),
         }
