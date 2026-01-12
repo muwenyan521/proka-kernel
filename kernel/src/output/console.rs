@@ -8,7 +8,7 @@ use crate::{
     FRAMEBUFFER_REQUEST,
 };
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
-use alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
+use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -16,6 +16,7 @@ use spin::Mutex;
 pub const DEFAULT_FONT_SIZE: f32 = 8.0;
 pub const TAB_SPACES: usize = 4;
 pub const GLYPH_CACHE_SIZE: usize = 512;
+pub const MAX_ANSI_PARAMS: usize = 8;
 
 // The default font writer
 lazy_static! {
@@ -114,10 +115,9 @@ impl GlyphCache {
 // ANSI 解析状态
 #[derive(Debug, PartialEq, Eq)]
 enum AnsiParseState {
-    Normal,                // 正常模式，处理字符
-    Escape,                // 收到 ESC (0x1B)
-    Csi,                   // 收到 ESC [ (0x1B 0x5B)
-    ParsingParams(String), // 收到 ESC [，正在收集参数（数字）
+    Normal, // 正常模式，处理字符
+    Escape, // 收到 ESC (0x1B)
+    Csi,    // 收到 ESC [ (0x1B 0x5B)
 }
 
 pub struct Console<'a> {
@@ -150,6 +150,9 @@ pub struct Console<'a> {
     hidden_cursor: bool,
 
     ansi_parse_state: AnsiParseState, // ANSI 解析状态
+    ansi_params: [u32; MAX_ANSI_PARAMS],
+    ansi_param_count: usize,
+    ansi_has_digit: bool,
 }
 
 impl<'a> Console<'a> {
@@ -176,6 +179,9 @@ impl<'a> Console<'a> {
             glyph_cache: GlyphCache::new(GLYPH_CACHE_SIZE),
             hidden_cursor: false,
             ansi_parse_state: AnsiParseState::Normal,
+            ansi_params: [0; MAX_ANSI_PARAMS],
+            ansi_param_count: 0,
+            ansi_has_digit: false,
             prev_cursor_x: 0,
             prev_cursor_y: 0,
         };
@@ -617,90 +623,29 @@ impl<'a> Console<'a> {
 
     /// 写入一个字符串到控制台
     pub fn write_string(&mut self, string: &str) {
-        for c in string.chars() {
-            match self.ansi_parse_state {
-                AnsiParseState::Normal => {
-                    match c {
-                        '\x1b' => {
-                            // ESC
-                            self.ansi_parse_state = AnsiParseState::Escape;
-                        }
-                        '\n' => {
-                            self.cursor_x = 0;
-                            self.cursor_y += 1;
-                            self.ensure_buffer_capacity();
-                        }
-                        '\r' => {
-                            self.cursor_x = 0;
-                        }
-                        '\t' => {
-                            let mut spaces_to_add =
-                                TAB_SPACES as u32 - (self.cursor_x % TAB_SPACES as u32);
-                            if spaces_to_add == 0 {
-                                spaces_to_add = TAB_SPACES as u32;
-                            }
-                            for _ in 0..spaces_to_add {
-                                self.put_char(' ');
-                                self.cursor_x += 1;
-                                if self.cursor_x >= self.width_chars {
-                                    self.cursor_x = 0;
-                                    self.cursor_y += 1;
-                                    break; // 超出直接换行，不继续添加空格
-                                }
-                            }
-                        }
-                        _ => {
-                            self.put_char(c);
-                            self.cursor_x += 1;
-                            if self.cursor_x >= self.width_chars {
-                                self.cursor_x = 0;
-                                self.cursor_y += 1;
-                                self.ensure_buffer_capacity();
-                            }
-                        }
+        let mut rest = string;
+        while !rest.is_empty() {
+            if self.ansi_parse_state == AnsiParseState::Normal {
+                if let Some(esc_pos) = rest.find('\x1b') {
+                    let (normal, tail) = rest.split_at(esc_pos);
+                    for c in normal.chars() {
+                        self.handle_normal_char(c);
                     }
+                    self.ansi_parse_state = AnsiParseState::Escape;
+                    rest = &tail[1..]; // 跳过 ESC
+                } else {
+                    for c in rest.chars() {
+                        self.handle_normal_char(c);
+                    }
+                    break;
                 }
-                AnsiParseState::Escape => {
-                    match c {
-                        '[' => {
-                            // CSI (Control Sequence Introducer)
-                            self.ansi_parse_state = AnsiParseState::Csi;
-                        }
-                        _ => {
-                            // Not a CSI sequence, treat ESC and the char as literals or ignore
-                            self.ansi_parse_state = AnsiParseState::Normal;
-                        }
-                    }
-                }
-                AnsiParseState::Csi => {
-                    if c.is_ascii_digit() {
-                        let mut params = String::new();
-                        params.push(c);
-                        self.ansi_parse_state = AnsiParseState::ParsingParams(params);
-                    } else if c == 'm' {
-                        // No parameters, just ESC[m (reset)
-                        self.apply_ansi_codes(&[0]); // Apply default reset
-                        self.ansi_parse_state = AnsiParseState::Normal;
-                    } else {
-                        // Malformed CSI sequence (e.g., ESC[A for cursor up, not supported yet)
-                        self.ansi_parse_state = AnsiParseState::Normal;
-                    }
-                }
-                AnsiParseState::ParsingParams(ref mut params_str) => {
-                    if c.is_ascii_digit() || c == ';' {
-                        params_str.push(c);
-                    } else if c == 'm' {
-                        // SGR (Select Graphic Rendition) sequence end
-                        let codes: Vec<u32> = params_str
-                            .split(';')
-                            .filter_map(|s| s.parse().ok())
-                            .collect();
-                        self.apply_ansi_codes(&codes);
-                        self.ansi_parse_state = AnsiParseState::Normal;
-                    } else {
-                        // Malformed or unsupported sequence, reset state
-                        self.ansi_parse_state = AnsiParseState::Normal;
-                    }
+            } else {
+                let mut chars = rest.chars();
+                if let Some(c) = chars.next() {
+                    self.handle_ansi_char(c);
+                    rest = chars.as_str();
+                } else {
+                    break;
                 }
             }
         }
@@ -711,6 +656,92 @@ impl<'a> Console<'a> {
         self.draw_cursor();
         self.renderer.present();
     }
+
+    /// 处理普通字符（非 ANSI 序列部分）
+    fn handle_normal_char(&mut self, c: char) {
+        match c {
+            '\n' => {
+                self.cursor_x = 0;
+                self.cursor_y += 1;
+                self.ensure_buffer_capacity();
+            }
+            '\r' => {
+                self.cursor_x = 0;
+            }
+            '\t' => {
+                let mut spaces_to_add = TAB_SPACES as u32 - (self.cursor_x % TAB_SPACES as u32);
+                if spaces_to_add == 0 {
+                    spaces_to_add = TAB_SPACES as u32;
+                }
+                for _ in 0..spaces_to_add {
+                    self.put_char(' ');
+                    self.cursor_x += 1;
+                    if self.cursor_x >= self.width_chars {
+                        self.cursor_x = 0;
+                        self.cursor_y += 1;
+                        self.ensure_buffer_capacity();
+                        break;
+                    }
+                }
+            }
+            _ => {
+                self.put_char(c);
+                self.cursor_x += 1;
+                if self.cursor_x >= self.width_chars {
+                    self.cursor_x = 0;
+                    self.cursor_y += 1;
+                    self.ensure_buffer_capacity();
+                }
+            }
+        }
+    }
+
+    /// 处理 ANSI 序列字符
+    fn handle_ansi_char(&mut self, c: char) {
+        match self.ansi_parse_state {
+            AnsiParseState::Escape => {
+                if c == '[' {
+                    self.ansi_parse_state = AnsiParseState::Csi;
+                    self.ansi_params.fill(0);
+                    self.ansi_param_count = 0;
+                    self.ansi_has_digit = false;
+                } else {
+                    self.ansi_parse_state = AnsiParseState::Normal;
+                    self.handle_normal_char(c);
+                }
+            }
+            AnsiParseState::Csi => {
+                if c.is_ascii_digit() {
+                    let val = c as u32 - '0' as u32;
+                    self.ansi_params[self.ansi_param_count] =
+                        self.ansi_params[self.ansi_param_count] * 10 + val;
+                    self.ansi_has_digit = true;
+                } else if c == ';' {
+                    if self.ansi_param_count + 1 < MAX_ANSI_PARAMS {
+                        self.ansi_param_count += 1;
+                        self.ansi_has_digit = false;
+                    }
+                } else if c == 'm' {
+                    let count = if self.ansi_has_digit || self.ansi_param_count > 0 {
+                        self.ansi_param_count + 1
+                    } else {
+                        0
+                    };
+                    
+                    // 复制参数以避免借用冲突
+                    let mut params = [0u32; MAX_ANSI_PARAMS];
+                    params[..count].copy_from_slice(&self.ansi_params[..count]);
+                    
+                    self.apply_ansi_codes(&params[..count]);
+                    self.ansi_parse_state = AnsiParseState::Normal;
+                } else {
+                    self.ansi_parse_state = AnsiParseState::Normal;
+                }
+            }
+            _ => self.ansi_parse_state = AnsiParseState::Normal,
+        }
+    }
+
 
     /// 将 ANSI 颜色代码映射到 `graphics::color::Color`
     fn ansi_code_to_color(code: u32) -> Option<Color> {
