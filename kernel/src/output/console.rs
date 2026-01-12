@@ -8,13 +8,14 @@ use crate::{
     FRAMEBUFFER_REQUEST,
 };
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-pub const DEFAULT_FONT_SIZE: f32 = 12.0;
+pub const DEFAULT_FONT_SIZE: f32 = 8.0;
 pub const TAB_SPACES: usize = 4;
+pub const GLYPH_CACHE_SIZE: usize = 512;
 
 // The default font writer
 lazy_static! {
@@ -43,47 +44,70 @@ struct ConsoleChar {
     bg: Color,
 }
 
-/// Represents a rectangular region on the screen in character coordinates.
-/// Used for tracking dirty regions that need redrawing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Rect {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
+#[derive(Clone)]
+struct GlyphBitmap {
+    bitmap: Vec<u8>,
+    width: u32,
+    height: u32,
+    offset_x: i32,
+    offset_y: i32,
 }
 
-impl Rect {
-    /// Creates a new rectangle.
-    pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+// LRU Cache Item
+struct CacheItem {
+    bitmap: GlyphBitmap,
+    last_used: u64,
+}
+
+struct GlyphCache {
+    cache: BTreeMap<char, CacheItem>,
+    counter: u64,
+    size: usize,
+}
+
+impl GlyphCache {
+    fn new(size: usize) -> Self {
         Self {
-            x,
-            y,
-            width,
-            height,
+            cache: BTreeMap::new(),
+            counter: 0,
+            size,
         }
     }
 
-    /// Checks if this rectangle overlaps with another rectangle.
-    pub fn overlaps_with(&self, other: &Rect) -> bool {
-        self.x < other.x + other.width
-            && self.x + self.width > other.x
-            && self.y < other.y + other.height
-            && self.y + self.height > other.y
+    fn get(&mut self, ch: char) -> Option<GlyphBitmap> {
+        if let Some(item) = self.cache.get_mut(&ch) {
+            self.counter += 1;
+            item.last_used = self.counter;
+            return Some(item.bitmap.clone());
+        }
+        None
     }
 
-    /// Merges this rectangle with another, returning a new rectangle that encompasses both.
-    pub fn merge(&self, other: &Rect) -> Self {
-        let min_x = self.x.min(other.x);
-        let min_y = self.y.min(other.y);
-        let max_x = (self.x + self.width).max(other.x + other.width);
-        let max_y = (self.y + self.height).max(other.y + other.height);
-        Rect {
-            x: min_x,
-            y: min_y,
-            width: max_x - min_x,
-            height: max_y - min_y,
+    fn put(&mut self, ch: char, bitmap: GlyphBitmap) {
+        self.counter += 1;
+        if self.cache.len() >= self.size {
+            // Evict LRU
+            // Ideally we need a secondary index for O(1) eviction, but BTreeMap iteration is O(N).
+            // For N=512, O(N) is acceptable for cache misses (which should be rare after warmup).
+            // Finding the min `last_used`.
+            if let Some((&k, _)) = self.cache.iter().min_by_key(|(_, v)| v.last_used) {
+                // clone key to remove
+                let key_to_remove = k;
+                self.cache.remove(&key_to_remove);
+            }
         }
+        self.cache.insert(
+            ch,
+            CacheItem {
+                bitmap,
+                last_used: self.counter,
+            },
+        );
+    }
+
+    fn clear(&mut self) {
+        self.cache.clear();
+        self.counter = 0;
     }
 }
 
@@ -121,10 +145,10 @@ pub struct Console<'a> {
     font_height: u32,   // 字体高度（像素）
     font_baseline: f32, // 基线位置
 
-    dirty_regions: Vec<Rect>,  // 存储需要重绘的矩形区域 (字符坐标)
-    cursor_needs_redraw: bool, // 标记光标是否需要重绘
+    cursor_needs_redraw: bool,
+    glyph_cache: GlyphCache,
+    hidden_cursor: bool,
 
-    hidden_cursor: bool,              //  是否隐藏光标
     ansi_parse_state: AnsiParseState, // ANSI 解析状态
 }
 
@@ -145,11 +169,11 @@ impl<'a> Console<'a> {
             current_bg_color: color::BLACK,
             default_color: color::WHITE,
             default_bg_color: color::BLACK,
-            font_width: 0,      // 临时值
-            font_height: 0,     // 临时值
-            font_baseline: 0.0, // 临时值
-            dirty_regions: Vec::new(),
+            font_width: 0,  // 临时值
+            font_height: 0, // 临时值
+            font_baseline: 0.0,
             cursor_needs_redraw: true,
+            glyph_cache: GlyphCache::new(GLYPH_CACHE_SIZE),
             hidden_cursor: false,
             ansi_parse_state: AnsiParseState::Normal,
             prev_cursor_x: 0,
@@ -224,13 +248,11 @@ impl<'a> Console<'a> {
                 //self.buffer =
                 //    vec![vec![None; self.width_chars as usize]; self.height_chars as usize];
 
-                // 标记整个屏幕为脏，需要完全重绘
-                self.dirty_regions.clear();
-                self.add_dirty_region(Rect::new(0, 0, self.width_chars, self.height_chars));
                 self.cursor_needs_redraw = true;
+                self.glyph_cache.clear();
 
                 // 立即重绘以反映字体变化
-                self.draw_buffer_to_screen();
+                self.redraw();
             }
             Err(_) => {
                 return;
@@ -241,21 +263,6 @@ impl<'a> Console<'a> {
     /// 获取渲染器可变引用
     pub fn get_renderer(&mut self) -> &mut Renderer<'a> {
         &mut self.renderer
-    }
-
-    /// 添加一个脏区域
-    fn add_dirty_region(&mut self, region: Rect) {
-        let mut merged = false;
-        for i in 0..self.dirty_regions.len() {
-            if self.dirty_regions[i].overlaps_with(&region) {
-                self.dirty_regions[i] = self.dirty_regions[i].merge(&region);
-                merged = true;
-                break; // 假设合并可以简化为一次，更复杂的合并可能需要多次遍历
-            }
-        }
-        if !merged {
-            self.dirty_regions.push(region);
-        }
     }
 
     /// 隐藏光标
@@ -277,11 +284,8 @@ impl<'a> Console<'a> {
         self.cursor_x = 0;
         self.cursor_y = 0;
         self.scroll_offset_y = 0;
-        // 清空整个屏幕是一个脏区域
-        self.dirty_regions.clear(); // 清除之前的脏区域
-        self.add_dirty_region(Rect::new(0, 0, self.width_chars, self.height_chars));
         self.cursor_needs_redraw = true;
-        self.draw_buffer_to_screen(); // 在`clear`后立即绘制以反映变化
+        self.redraw(); // 在`clear`后立即绘制以反映变化
     }
     /// 清空渲染器上的所有像素，以背景色填充
     #[allow(dead_code)]
@@ -304,10 +308,8 @@ impl<'a> Console<'a> {
 
         if old_offset != new_offset {
             // 滚动导致整个屏幕内容需要重新绘制
-            self.dirty_regions.clear();
-            self.add_dirty_region(Rect::new(0, 0, self.width_chars, self.height_chars));
             self.cursor_needs_redraw = true; // 光标位置可能不变，但是背景变了，所以也要重新绘制
-            self.draw_buffer_to_screen(); // 滚动后立即绘制屏幕
+            self.redraw(); // 滚动后立即绘制屏幕
         }
     }
 
@@ -329,8 +331,7 @@ impl<'a> Console<'a> {
 
             // 标记整个屏幕为脏，因为滚动导致所有可见内容移动
             if old_scroll_offset_y != self.scroll_offset_y {
-                self.dirty_regions.clear();
-                self.add_dirty_region(Rect::new(0, 0, self.width_chars, self.height_chars));
+                self.redraw();
             }
         }
     }
@@ -365,9 +366,14 @@ impl<'a> Console<'a> {
             }
         }
 
-        // 如果在屏幕可见范围内且需要重绘，则标记为脏
         if needs_redraw && self.cursor_y < self.height_chars {
-            self.add_dirty_region(Rect::new(self.cursor_x, self.cursor_y, 1, 1));
+            self.draw_char_to_screen_at_px(
+                ch,
+                self.cursor_x * self.font_width,
+                self.cursor_y * self.font_height,
+                self.current_color,
+                self.current_bg_color,
+            );
         }
 
         self.cursor_needs_redraw = true; // 光标位置变动或背景变动都需要重绘光标
@@ -383,7 +389,42 @@ impl<'a> Console<'a> {
         fg_color: Color,
         bg_color: Color,
     ) {
-        // 绘制背景
+        let bitmap = if let Some(bm) = self.glyph_cache.get(ch) {
+            bm
+        } else {
+            let glyph = match self
+                .font
+                .outline_glyph(self.font.glyph_id(ch).with_scale(self.scale))
+            {
+                Some(g) => g,
+                None => return,
+            };
+            let px_bounds = glyph.px_bounds();
+            let width = px_bounds.width() as u32;
+            let height = px_bounds.height() as u32;
+            let mut data = vec![0u8; (width * height) as usize];
+
+            glyph.draw(|x, y, c| {
+                let alpha = (c * 255.0) as u8;
+                if alpha > 0 {
+                    let idx = (y * width + x) as usize;
+                    if idx < data.len() {
+                        data[idx] = alpha;
+                    }
+                }
+            });
+
+            let new_bitmap = GlyphBitmap {
+                bitmap: data,
+                width,
+                height,
+                offset_x: px_bounds.min.x as i32,
+                offset_y: px_bounds.min.y as i32,
+            };
+            self.glyph_cache.put(ch, new_bitmap.clone());
+            new_bitmap
+        };
+
         self.renderer.fill_rect(
             Pixel::new(x_px as u64, y_px as u64),
             self.font_width as u64,
@@ -391,43 +432,18 @@ impl<'a> Console<'a> {
             bg_color,
         );
 
-        if let Some(glyph) = self
-            .font
-            .outline_glyph(self.font.glyph_id(ch).with_scale(self.scale))
-        {
-            let pixel_bounds = glyph.px_bounds();
+        let baseline_y = y_px as f32 + self.font_baseline;
+        let start_x = (x_px as i32 + bitmap.offset_x) as u64;
+        let start_y = (baseline_y + bitmap.offset_y as f32) as u64;
 
-            let x_offset = x_px as f32 + pixel_bounds.min.x;
-            let y_offset = y_px as f32 + self.font_baseline + pixel_bounds.min.y;
-
-            // 优化浮点数到整数转换，避免在循环内部重复计算round
-            // 对于每个像素，c是alpha值，我们只在c > 0.0 时进行绘制
-            //let st = crate::libs::time::time_since_boot();
-            glyph.draw(|x, y, c| {
-                if c == 0.0 {
-                    return;
-                }
-
-                // 结合偏移量计算屏幕像素坐标
-                let screen_x = ((x as f32 + x_offset) + 0.5) as u32;
-                let screen_y = ((y as f32 + y_offset) + 0.5) as u32;
-
-                // 边界检查，防止画到屏幕外
-                if screen_x >= self.renderer.width() as u32
-                    || screen_y >= self.renderer.height() as u32
-                {
-                    return;
-                }
-
-                let alpha = (255.0 * c) as u8;
-                self.renderer.set_pixel(
-                    Pixel::new(screen_x as u64, screen_y as u64),
-                    &fg_color.mix_alpha(alpha),
-                );
-            });
-            //let et = crate::libs::time::time_since_boot();
-            //serial_println!("draw_char_to_screen_at_px: {}", et - st);
-        }
+        self.renderer.draw_alpha_mask(
+            start_x,
+            start_y,
+            bitmap.width,
+            bitmap.height,
+            &bitmap.bitmap,
+            &fg_color,
+        );
     }
 
     /// 绘制当前光标到屏幕
@@ -486,88 +502,43 @@ impl<'a> Console<'a> {
         self.cursor_needs_redraw = false;
     }
 
-    /// 绘制缓冲区中变脏的部分到屏幕
-    pub fn draw_buffer_to_screen(&mut self) {
-        // 如果没有脏区域且光标不需要重绘，则无需进行任何渲染操作
-        if self.dirty_regions.is_empty() && !self.cursor_needs_redraw {
-            // self.renderer.present();
-            return;
-        }
+    /// Redraws the entire visible buffer to the screen.
+    pub fn redraw(&mut self) {
+        self.clear_screen_pixels();
 
         let start_display_row = self.scroll_offset_y;
         let end_display_row =
             (self.scroll_offset_y + self.height_chars as usize).min(self.buffer.len());
 
-        // 收集所有需要绘制的字符信息，避免在借用self时调用self的方法
-        let mut chars_to_draw: Vec<(char, u32, u32, Color, Color)> = Vec::new();
+        let mut chars_to_draw = Vec::new();
 
-        // 遍历脏区域，只重绘这些区域内的字符
-        let mut regions_to_clear_bg = Vec::new(); // 存储需要先用背景色填充的像素区域
-
-        for dirty_region in self.dirty_regions.drain(..) {
-            let start_char_x = dirty_region.x;
-            let end_char_x = dirty_region.x + dirty_region.width;
-            let start_char_y = dirty_region.y;
-            let end_char_y = dirty_region.y + dirty_region.height;
-
-            let actual_start_char_x = start_char_x.min(self.width_chars);
-            let actual_end_char_x = end_char_x.min(self.width_chars);
-            let actual_start_char_y = start_char_y.min(self.height_chars);
-            let actual_end_char_y = end_char_y.min(self.height_chars);
-
-            let px_x = actual_start_char_x * self.font_width;
-            let px_y = actual_start_char_y * self.font_height;
-            let px_width = (actual_end_char_x - actual_start_char_x) * self.font_width;
-            let px_height = (actual_end_char_y - actual_start_char_y) * self.font_height;
-
-            regions_to_clear_bg.push((
-                Pixel::new(px_x as u64, px_y as u64),
-                px_width as u64,
-                px_height as u64,
-            ));
-
-            for screen_y_offset in actual_start_char_y..actual_end_char_y {
-                let current_buf_row_idx = (screen_y_offset + start_display_row as u32) as usize;
-
-                if current_buf_row_idx >= end_display_row {
-                    continue; // 超出可见范围
-                }
-
-                // 检查缓冲区行是否存在，以防止索引越界
-                if let Some(row) = self.buffer.get(current_buf_row_idx) {
-                    for screen_x_offset in actual_start_char_x..actual_end_char_x {
-                        // 检查缓冲区单元格是否存在
-                        if let Some(Some(ConsoleChar { ch, fg, bg })) =
-                            row.get(screen_x_offset as usize)
-                        {
-                            let x_px = screen_x_offset * self.font_width;
-                            let y_px = screen_y_offset * self.font_height;
-                            chars_to_draw.push((*ch, x_px, y_px, *fg, *bg));
-                        }
-                    }
+        for (y_offset, row) in self.buffer[start_display_row..end_display_row]
+            .iter()
+            .enumerate()
+        {
+            for (x, cell) in row.iter().enumerate() {
+                if let Some(char_info) = cell {
+                    chars_to_draw.push((
+                        char_info.ch,
+                        x as u32 * self.font_width,
+                        y_offset as u32 * self.font_height,
+                        char_info.fg,
+                        char_info.bg,
+                    ));
                 }
             }
         }
 
-        // 先用当前背景色填充所有脏区域的像素，确保背景色更新
-        for (pos, w, h) in regions_to_clear_bg {
-            self.renderer.fill_rect(pos, w, h, self.current_bg_color);
+        for (ch, x, y, fg, bg) in chars_to_draw {
+            self.draw_char_to_screen_at_px(ch, x, y, fg, bg);
         }
 
-        // 绘制所有收集到的字符
-        for (ch, x_px, y_px, fg, bg) in chars_to_draw {
-            self.draw_char_to_screen_at_px(ch, x_px, y_px, fg, bg);
-        }
-
-        self.draw_cursor(); // 绘制光标
-        self.renderer.present(); // 刷新屏幕
+        self.draw_cursor();
+        self.renderer.present();
     }
 
     /// 写入一个字符串到控制台
     pub fn write_string(&mut self, string: &str) {
-        let mut changed_content = false; // 标记是否有实际内容写入
-        let mut cursor_moved = false; // 标记光标是否移动，包括换行、回车、tab
-
         for c in string.chars() {
             match self.ansi_parse_state {
                 AnsiParseState::Normal => {
@@ -580,11 +551,9 @@ impl<'a> Console<'a> {
                             self.cursor_x = 0;
                             self.cursor_y += 1;
                             self.ensure_buffer_capacity();
-                            cursor_moved = true;
                         }
                         '\r' => {
                             self.cursor_x = 0;
-                            cursor_moved = true;
                         }
                         '\t' => {
                             let mut spaces_to_add =
@@ -601,8 +570,6 @@ impl<'a> Console<'a> {
                                     self.ensure_buffer_capacity();
                                 }
                             }
-                            changed_content = true;
-                            cursor_moved = true;
                         }
                         _ => {
                             self.put_char(c);
@@ -612,8 +579,6 @@ impl<'a> Console<'a> {
                                 self.cursor_y += 1;
                                 self.ensure_buffer_capacity();
                             }
-                            changed_content = true;
-                            cursor_moved = true;
                         }
                     }
                 }
@@ -638,7 +603,6 @@ impl<'a> Console<'a> {
                         // No parameters, just ESC[m (reset)
                         self.apply_ansi_codes(&[0]); // Apply default reset
                         self.ansi_parse_state = AnsiParseState::Normal;
-                        changed_content = true; // 颜色变化也算作内容变化
                     } else {
                         // Malformed CSI sequence (e.g., ESC[A for cursor up, not supported yet)
                         self.ansi_parse_state = AnsiParseState::Normal;
@@ -655,7 +619,6 @@ impl<'a> Console<'a> {
                             .collect();
                         self.apply_ansi_codes(&codes);
                         self.ansi_parse_state = AnsiParseState::Normal;
-                        changed_content = true; // 颜色变化也算作内容变化
                     } else {
                         // Malformed or unsupported sequence, reset state
                         self.ansi_parse_state = AnsiParseState::Normal;
@@ -664,25 +627,11 @@ impl<'a> Console<'a> {
             }
         }
 
-        // 如果光标移动了，将旧的光标位置标记为脏区域，以确保它被重绘（从而清除光标块）
-        if self.cursor_x != self.prev_cursor_x || self.cursor_y != self.prev_cursor_y {
-            // 仅当旧光标位置在屏幕内时才标记它为脏
-            if self.prev_cursor_y < self.height_chars {
-                self.add_dirty_region(Rect::new(self.prev_cursor_x, self.prev_cursor_y, 1, 1));
-            }
-            cursor_moved = true;
-        }
-
         // 标记新的光标位置需要重绘
         self.cursor_needs_redraw = true;
 
-        // 如果内容有变化或光标移动了，或者有脏区域，则触发一次渲染
-        if changed_content || cursor_moved || !self.dirty_regions.is_empty() {
-            self.draw_buffer_to_screen();
-        } else {
-            // 啥也没变，但可能光标需要闪烁，所以还是要刷新
-            self.renderer.present();
-        }
+        self.draw_cursor();
+        self.renderer.present();
     }
 
     /// 将 ANSI 颜色代码映射到 `graphics::color::Color`
@@ -788,10 +737,8 @@ impl<'a> Console<'a> {
         if self.current_bg_color != color {
             self.current_bg_color = color;
             // 当背景色改变时，整个屏幕可能需要重绘以应用新的背景色
-            // 而不是直接调用draw_buffer_to_screen，而是标记整个屏幕为脏
-            self.dirty_regions.clear();
-            self.add_dirty_region(Rect::new(0, 0, self.width_chars, self.height_chars));
             self.cursor_needs_redraw = true;
+            self.redraw();
         }
     }
 }

@@ -39,6 +39,10 @@ pub struct Renderer<'a> {
     back_buffer: Vec<u8>,         // 后台缓冲区
     pixel_size: usize,            // 每个像素占用的字节数
     clear_color: color::Color,    // 默认清屏颜色
+    dirty_min_x: u64,
+    dirty_min_y: u64,
+    dirty_max_x: u64,
+    dirty_max_y: u64,
 }
 
 impl<'a> Renderer<'a> {
@@ -56,6 +60,10 @@ impl<'a> Renderer<'a> {
             back_buffer,
             pixel_size,
             clear_color: color::BLACK,
+            dirty_min_x: u64::MAX,
+            dirty_min_y: u64::MAX,
+            dirty_max_x: 0,
+            dirty_max_y: 0,
         }
     }
 
@@ -84,7 +92,7 @@ impl<'a> Renderer<'a> {
 
     /// 绘制像素到后台缓冲区
     #[inline(always)]
-    fn set_pixel_raw(&mut self, x: u64, y: u64, color: &color::Color) {
+    pub fn set_pixel_raw(&mut self, x: u64, y: u64, color: &color::Color) {
         // 边界检查：确保像素在屏幕范围内
         if x < self.framebuffer.width() && y < self.framebuffer.height() {
             let offset = self.get_buffer_offset(x, y);
@@ -113,7 +121,91 @@ impl<'a> Renderer<'a> {
             for i in 0..self.pixel_size {
                 self.back_buffer[offset + i] = bytes_to_write[i];
             }
+
+            if x < self.dirty_min_x {
+                self.dirty_min_x = x;
+            }
+            if y < self.dirty_min_y {
+                self.dirty_min_y = y;
+            }
+            if x + 1 > self.dirty_max_x {
+                self.dirty_max_x = x + 1;
+            }
+            if y + 1 > self.dirty_max_y {
+                self.dirty_max_y = y + 1;
+            }
         }
+    }
+
+    /// 绘制 Alpha 遮罩（用于字形绘制优化）
+    pub fn draw_alpha_mask(
+        &mut self,
+        x: u64,
+        y: u64,
+        width: u32,
+        height: u32,
+        mask: &[u8],
+        color: &color::Color,
+    ) {
+        if x >= self.framebuffer.width() || y >= self.framebuffer.height() {
+            return;
+        }
+
+        let draw_width = (width as u64).min(self.framebuffer.width() - x);
+        let draw_height = (height as u64).min(self.framebuffer.height() - y);
+
+        let cr = color.r as u32;
+        let cg = color.g as u32;
+        let cb = color.b as u32;
+
+        let bpp = self.framebuffer.bpp();
+        let r_shift = self.framebuffer.red_mask_shift();
+        let g_shift = self.framebuffer.green_mask_shift();
+        let b_shift = self.framebuffer.blue_mask_shift();
+
+        for row in 0..draw_height {
+            let cur_y = y + row;
+            for col in 0..draw_width {
+                let alpha = mask[(row * width as u64 + col) as usize] as u32;
+                if alpha == 0 {
+                    continue;
+                }
+
+                let cur_x = x + col;
+                let offset = self.get_buffer_offset(cur_x, cur_y);
+
+                let final_color_u32 = if alpha == 255 {
+                    if bpp == 32 {
+                        (cr << r_shift) | (cg << g_shift) | (cb << b_shift)
+                    } else {
+                        color.to_u32(false)
+                    }
+                } else {
+                    let current_color = self.get_pixel_raw(cur_x, cur_y);
+                    let inv_alpha = 255 - alpha;
+                    let r = (cr * alpha + current_color.r as u32 * inv_alpha) / 255;
+                    let g = (cg * alpha + current_color.g as u32 * inv_alpha) / 255;
+                    let b = (cb * alpha + current_color.b as u32 * inv_alpha) / 255;
+
+                    if bpp == 32 {
+                        (r << r_shift) | (g << g_shift) | (b << b_shift)
+                    } else {
+                        (r << 16) | (g << 8) | b
+                    }
+                };
+
+                let bytes = final_color_u32.to_le_bytes();
+                for i in 0..self.pixel_size {
+                    self.back_buffer[offset + i] = bytes[i];
+                }
+            }
+        }
+
+        // 更新脏区域
+        self.dirty_min_x = self.dirty_min_x.min(x);
+        self.dirty_min_y = self.dirty_min_y.min(y);
+        self.dirty_max_x = self.dirty_max_x.max(x + draw_width);
+        self.dirty_max_y = self.dirty_max_y.max(y + draw_height);
     }
 
     /// 设置像素
@@ -164,6 +256,11 @@ impl<'a> Renderer<'a> {
                 }
             }
         }
+
+        self.dirty_min_x = 0;
+        self.dirty_min_y = 0;
+        self.dirty_max_x = width;
+        self.dirty_max_y = height;
     }
 
     /// 绘制线
@@ -580,25 +677,41 @@ impl<'a> Renderer<'a> {
 
     /// 将后台缓冲区的内容复制到前台帧缓冲区，从而显示绘制结果。
     pub fn present(&mut self) {
-        let width = self.framebuffer.width() as usize;
-        let height = self.framebuffer.height() as usize;
+        let fb_width = self.framebuffer.width();
+        let fb_height = self.framebuffer.height();
+
+        let min_x = self.dirty_min_x.min(fb_width);
+        let min_y = self.dirty_min_y.min(fb_height);
+        let max_x = self.dirty_max_x.min(fb_width);
+        let max_y = self.dirty_max_y.min(fb_height);
+
+        if min_x >= max_x || min_y >= max_y {
+            return;
+        }
+
+        let width = (max_x - min_x) as usize;
         let pitch = self.framebuffer.pitch() as usize; // Framebuffer每行的字节数
         let pixel_size = self.pixel_size; // 后台缓冲区每个像素的字节数
+
         unsafe {
             let front_buffer_addr = self.framebuffer.addr();
-            // 逐行复制以处理可能不同的 pitch
-            for y_idx in 0..height {
-                let back_buffer_row_start = y_idx * width * pixel_size;
-                let front_buffer_row_start = y_idx * pitch;
-                // 获取后台缓冲区当前行的切片
+            for y in min_y..max_y {
+                let back_buffer_offset = (y * fb_width + min_x) as usize * pixel_size;
+                let front_buffer_offset = y as usize * pitch + min_x as usize * pixel_size;
+
                 let source_slice = &self.back_buffer
-                    [back_buffer_row_start..(back_buffer_row_start + width * pixel_size)];
-                // 获取前台帧缓冲区当前行的可变切片
-                let dest_ptr = front_buffer_addr.add(front_buffer_row_start);
+                    [back_buffer_offset..(back_buffer_offset + width * pixel_size)];
+
+                let dest_ptr = front_buffer_addr.add(front_buffer_offset);
                 let dest_slice = slice::from_raw_parts_mut(dest_ptr, width * pixel_size);
-                // 复制数据
+
                 dest_slice.copy_from_slice(source_slice);
             }
         }
+
+        self.dirty_min_x = u64::MAX;
+        self.dirty_min_y = u64::MAX;
+        self.dirty_max_x = 0;
+        self.dirty_max_y = 0;
     }
 }
