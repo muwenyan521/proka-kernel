@@ -435,15 +435,18 @@ impl<'a> Console<'a> {
         let baseline_y = y_px as f32 + self.font_baseline;
         let start_x = (x_px as i32 + bitmap.offset_x) as u64;
         let start_y = (baseline_y + bitmap.offset_y as f32) as u64;
-
-        self.renderer.draw_alpha_mask(
-            start_x,
-            start_y,
-            bitmap.width,
-            bitmap.height,
-            &bitmap.bitmap,
-            &fg_color,
-        );
+        for row in 0..bitmap.height {
+            for col in 0..bitmap.width {
+                let alpha = bitmap.bitmap[(row * bitmap.width + col) as usize];
+                unsafe {
+                    self.renderer.set_pixel_raw_unchecked(
+                        start_x + col as u64,
+                        start_y + row as u64,
+                        &fg_color.mix_alpha(alpha),
+                    );
+                }
+            }
+        }
     }
 
     /// 绘制当前光标到屏幕
