@@ -41,9 +41,50 @@ impl Console {
     }
 
     fn scroll_up(&mut self) {
+        let st = crate::libs::time::time_since_boot();
+        // First, clear first line
+        for y in 0..FONT_H {
+            for x in 0..self.width {
+                let offset = y * self.pitch + x * 4;
+                unsafe {
+                    self.address
+                        .add(offset as usize)
+                        .cast::<u32>()
+                        .write(0x00000000);
+                }
+            }
+        }
+
+        // Second, move each line up.
+        for y in FONT_H..self.height {
+            for x in 0..self.width {
+                let src_offset = y * self.pitch + x * 4;
+                let dst_offset = (y - FONT_H) * self.pitch + x * 4;
+                unsafe {
+                    let pixel = self.address.add(src_offset as usize).cast::<u32>().read();
+                    self.address
+                        .add(dst_offset as usize)
+                        .cast::<u32>()
+                        .write(pixel);
+                }
+            }
+        }
+
+        // Third, clear last line
+        for y in (self.height - FONT_H)..self.height {
+            for x in 0..self.width {
+                let offset = y * self.pitch + x * 4;
+                unsafe {
+                    self.address
+                        .add(offset as usize)
+                        .cast::<u32>()
+                        .write(0x00000000);
+                }
+            }
+        }
+        let et = crate::libs::time::time_since_boot();
         use crate::serial_println;
-        serial_println!("test");
-        /* TODO: Implement scroll up*/
+        serial_println!("{}", et - st);
     }
 
     fn print_char(&mut self, c: usize) {
@@ -52,6 +93,7 @@ impl Console {
             self.position.0 = 0;
             if (self.position.1 + FONT_H) >= self.height {
                 self.scroll_up();
+                self.position.1 -= FONT_H;
             } else {
                 self.position.1 += FONT_H;
             }
@@ -63,6 +105,7 @@ impl Console {
             self.position.0 = 0;
             if (self.position.1 + FONT_H) >= self.height {
                 self.scroll_up();
+                self.position.1 -= FONT_H;
             } else {
                 self.position.1 += FONT_H;
             }
