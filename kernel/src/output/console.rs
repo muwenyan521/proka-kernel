@@ -126,8 +126,8 @@ pub struct Console<'a> {
     scale: PxScale,             // 字体缩放比例
     font_size: f32,             // 字体大小（pt）
 
-    buffer: Vec<Vec<Option<ConsoleChar>>>, // 字符缓冲区
-    scroll_offset_y: usize,                // 垂直滚动偏移量
+    buffer: Vec<Option<ConsoleChar>>, // 字符缓冲区
+    scroll_offset_y: usize,           // 垂直滚动偏移量
 
     width_chars: u32,  // 宽度（字符数）
     height_chars: u32, // 高度（字符数）
@@ -180,8 +180,7 @@ impl<'a> Console<'a> {
             prev_cursor_y: 0,
         };
         console.init_font_metrics(DEFAULT_FONT_SIZE); // 初始化字体度量
-        console.buffer =
-            vec![vec![None; console.width_chars as usize]; console.height_chars as usize]; // 初始缓冲区
+        console.buffer = vec![None; (console.width_chars * console.height_chars) as usize]; // 初始缓冲区
         console
     }
 
@@ -276,11 +275,7 @@ impl<'a> Console<'a> {
 
     /// 清空整个缓冲区
     pub fn clear(&mut self) {
-        for row in self.buffer.iter_mut() {
-            for cell in row.iter_mut() {
-                *cell = None;
-            }
-        }
+        self.buffer.fill(None);
         self.cursor_x = 0;
         self.cursor_y = 0;
         self.scroll_offset_y = 0;
@@ -298,18 +293,94 @@ impl<'a> Console<'a> {
 
     /// 滚动缓冲区 (lines > 0 -> 向下滚动, lines < 0 -> 向上滚动)
     pub fn scroll(&mut self, lines: i32) {
+        if lines == 0 {
+            return;
+        }
+        let total_rows = self.buffer.len() / self.width_chars as usize;
         let old_offset = self.scroll_offset_y;
         let new_offset = (self.scroll_offset_y as i32 + lines)
             .max(0) // 确保不向上滚动超过缓冲区顶部
-            .min(self.buffer.len() as i32 - self.height_chars as i32 + 1) // 确保不向下滚动超过超出缓冲区底部 + 1行，以便显示新行
+            .min((total_rows as i32 - self.height_chars as i32).max(0))
             as usize;
 
-        self.scroll_offset_y = new_offset;
+        if old_offset == new_offset {
+            return;
+        }
 
-        if old_offset != new_offset {
-            // 滚动导致整个屏幕内容需要重新绘制
-            self.cursor_needs_redraw = true; // 光标位置可能不变，但是背景变了，所以也要重新绘制
-            self.redraw(); // 滚动后立即绘制屏幕
+        let actual_lines = new_offset as i32 - old_offset as i32;
+        self.scroll_offset_y = new_offset;
+        self.cursor_needs_redraw = true;
+
+        // 如果滚动行数小于屏幕高度，使用增量滚动优化
+        if actual_lines.abs() < self.height_chars as i32 {
+            // renderer.scroll_y 使用负值表示内容向上移动（即视口向下移动）
+            let pixel_offset = -(actual_lines * self.font_height as i32);
+            self.renderer.scroll_y(pixel_offset as i64);
+
+            if actual_lines > 0 {
+                // 视口向下移，内容向上移，底部出现新行
+                for y in (self.height_chars as i32 - actual_lines) as u32..self.height_chars {
+                    self.draw_line_to_screen(y);
+                }
+            } else {
+                // 视口向上移，内容向下移，顶部出现新行
+                for y in 0..(-actual_lines) as u32 {
+                    self.draw_line_to_screen(y);
+                }
+            }
+            self.draw_cursor();
+            self.renderer.present();
+        } else {
+            // 滚动太多，直接重绘
+            self.redraw();
+        }
+    }
+
+    /// 渲染缓冲区中的一行到屏幕的指定行（屏幕坐标）
+    fn draw_line_to_screen(&mut self, screen_y: u32) {
+        if screen_y >= self.height_chars {
+            return;
+        }
+        let buf_y = (screen_y + self.scroll_offset_y as u32) as usize;
+        let total_rows = self.buffer.len() / self.width_chars as usize;
+        if buf_y >= total_rows {
+            let width = self.renderer.width();
+            let bg_color = self.current_bg_color;
+            self.renderer.fill_rect(
+                Pixel::new(0, (screen_y * self.font_height) as u64),
+                width,
+                self.font_height as u64,
+                bg_color,
+            );
+            return;
+        }
+
+        let start_idx = buf_y * self.width_chars as usize;
+        let end_idx = start_idx + self.width_chars as usize;
+        let row_data: Vec<Option<ConsoleChar>> = self.buffer[start_idx..end_idx].to_vec();
+        for (x, cell) in row_data.into_iter().enumerate() {
+            if let Some(char_info) = cell {
+                self.draw_char_to_screen_at_px(
+                    char_info.ch,
+                    x as u32 * self.font_width,
+                    screen_y * self.font_height,
+                    char_info.fg,
+                    char_info.bg,
+                );
+            } else {
+                let font_width = self.font_width;
+                let font_height = self.font_height;
+                let bg_color = self.current_bg_color;
+                self.renderer.fill_rect(
+                    Pixel::new(
+                        (x as u32 * font_width) as u64,
+                        (screen_y * font_height) as u64,
+                    ),
+                    font_width as u64,
+                    font_height as u64,
+                    bg_color,
+                );
+            }
         }
     }
 
@@ -317,9 +388,11 @@ impl<'a> Console<'a> {
     fn ensure_buffer_capacity(&mut self) {
         // 如果当前光标Y位置加上滚动偏移量已经超出了缓冲区的当前长度
         let target_buf_y = (self.cursor_y + self.scroll_offset_y as u32) as usize;
-        while target_buf_y >= self.buffer.len() {
-            // 添加新行
-            self.buffer.push(vec![None; self.width_chars as usize]);
+        let total_rows = self.buffer.len() / self.width_chars as usize;
+        if target_buf_y >= total_rows {
+            let new_total_rows = target_buf_y + 1;
+            self.buffer
+                .resize(new_total_rows * self.width_chars as usize, None);
         }
 
         // 如果光标在屏幕上超出了可见高度，则进行滚动
@@ -329,9 +402,16 @@ impl<'a> Console<'a> {
             self.scroll_offset_y = (self.scroll_offset_y as u32 + lines_to_scroll) as usize;
             self.cursor_y = self.height_chars - 1; // 将光标设置到屏幕的最后一行
 
-            // 标记整个屏幕为脏，因为滚动导致所有可见内容移动
             if old_scroll_offset_y != self.scroll_offset_y {
-                self.redraw();
+                // 增量滚动优化
+                let pixel_offset = -(lines_to_scroll as i32 * self.font_height as i32);
+                self.renderer.scroll_y(pixel_offset as i64);
+
+                // 补全底部新出现的行
+                for y in (self.height_chars - lines_to_scroll)..self.height_chars {
+                    self.draw_line_to_screen(y);
+                }
+                // self.redraw() 会在最后 present，这里可以根据需要决定是否立即同步
             }
         }
     }
@@ -342,6 +422,7 @@ impl<'a> Console<'a> {
 
         let current_buf_y = (self.cursor_y + self.scroll_offset_y as u32) as usize;
         let buf_x = self.cursor_x as usize;
+        let idx = current_buf_y * self.width_chars as usize + buf_x;
 
         let new_char_info = Some(ConsoleChar {
             ch,
@@ -351,19 +432,15 @@ impl<'a> Console<'a> {
 
         // 检查缓冲区中是否已有该字符，并且颜色、字符都相同，如果相同则不需要重绘
         let mut needs_redraw = true;
-        if let Some(row) = self.buffer.get(current_buf_y) {
-            if let Some(current_cell) = row.get(buf_x) {
-                if *current_cell == new_char_info {
-                    needs_redraw = false; // 字符和颜色都相同，不需要重绘
-                }
+        if let Some(current_cell) = self.buffer.get(idx) {
+            if *current_cell == new_char_info {
+                needs_redraw = false; // 字符和颜色都相同，不需要重绘
             }
         }
 
         // 更新缓冲区
-        if let Some(row) = self.buffer.get_mut(current_buf_y) {
-            if let Some(cell) = row.get_mut(buf_x) {
-                *cell = new_char_info;
-            }
+        if let Some(cell) = self.buffer.get_mut(idx) {
+            *cell = new_char_info;
         }
 
         if needs_redraw && self.cursor_y < self.height_chars {
@@ -458,31 +535,28 @@ impl<'a> Console<'a> {
         if self.prev_cursor_y < self.height_chars {
             let prev_x = self.prev_cursor_x;
             let prev_y = self.prev_cursor_y;
+            let buf_y = (prev_y + self.scroll_offset_y as u32) as usize;
+            let idx = buf_y * self.width_chars as usize + prev_x as usize;
 
-            if let Some(row) = self
-                .buffer
-                .get((prev_y + self.scroll_offset_y as u32) as usize)
-            {
-                if let Some(Some(char_info)) = row.get(prev_x as usize) {
-                    self.draw_char_to_screen_at_px(
-                        char_info.ch,
-                        prev_x * self.font_width,
-                        prev_y * self.font_height,
-                        char_info.fg,
-                        char_info.bg,
-                    );
-                } else {
-                    // 如果旧光标位置缓冲区为空，则用背景色填充
-                    self.renderer.fill_rect(
-                        Pixel::new(
-                            (prev_x * self.font_width) as u64,
-                            (prev_y * self.font_height) as u64,
-                        ),
-                        self.font_width as u64,
-                        self.font_height as u64,
-                        self.current_bg_color,
-                    );
-                }
+            if let Some(Some(char_info)) = self.buffer.get(idx) {
+                self.draw_char_to_screen_at_px(
+                    char_info.ch,
+                    prev_x * self.font_width,
+                    prev_y * self.font_height,
+                    char_info.fg,
+                    char_info.bg,
+                );
+            } else {
+                // 如果旧光标位置缓冲区为空，则用背景色填充
+                self.renderer.fill_rect(
+                    Pixel::new(
+                        (prev_x * self.font_width) as u64,
+                        (prev_y * self.font_height) as u64,
+                    ),
+                    self.font_width as u64,
+                    self.font_height as u64,
+                    self.current_bg_color,
+                );
             }
         }
         // 2. 绘制新光标（仅在可见位置绘制）
@@ -510,16 +584,17 @@ impl<'a> Console<'a> {
         self.clear_screen_pixels();
 
         let start_display_row = self.scroll_offset_y;
-        let end_display_row =
-            (self.scroll_offset_y + self.height_chars as usize).min(self.buffer.len());
+        let end_display_row = (self.scroll_offset_y + self.height_chars as usize)
+            .min(self.buffer.len() / self.width_chars as usize);
 
         let mut chars_to_draw = Vec::new();
 
-        for (y_offset, row) in self.buffer[start_display_row..end_display_row]
-            .iter()
-            .enumerate()
-        {
-            for (x, cell) in row.iter().enumerate() {
+        for y_offset in 0..(end_display_row - start_display_row) {
+            let buf_y = start_display_row + y_offset;
+            let row_start = buf_y * self.width_chars as usize;
+            let row_end = row_start + self.width_chars as usize;
+
+            for (x, cell) in self.buffer[row_start..row_end].iter().enumerate() {
                 if let Some(char_info) = cell {
                     chars_to_draw.push((
                         char_info.ch,
@@ -570,7 +645,7 @@ impl<'a> Console<'a> {
                                 if self.cursor_x >= self.width_chars {
                                     self.cursor_x = 0;
                                     self.cursor_y += 1;
-                                    self.ensure_buffer_capacity();
+                                    break; // 超出直接换行，不继续添加空格
                                 }
                             }
                         }
@@ -739,7 +814,8 @@ impl<'a> Console<'a> {
     pub fn set_bg_color(&mut self, color: Color) {
         if self.current_bg_color != color {
             self.current_bg_color = color;
-            // 当背景色改变时，整个屏幕可能需要重绘以应用新的背景色
+            self.renderer.set_clear_color(color); // 同步渲染器的清屏颜色，用于 scroll_y
+                                                  // 当背景色改变时，整个屏幕需要重绘以应用新的背景色
             self.cursor_needs_redraw = true;
             self.redraw();
         }

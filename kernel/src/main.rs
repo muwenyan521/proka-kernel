@@ -106,6 +106,10 @@ pub extern "C" fn kernel_main() -> ! {
         core::str::from_utf8(&buf[..len]).unwrap()
     );
 
+    for i in 0..10 {
+        println!("{}", i);
+    }
+
     loop {
         let mut buf = [0u8; 1];
         let kbd_device = {
