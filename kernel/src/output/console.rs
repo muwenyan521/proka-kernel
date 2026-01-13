@@ -89,27 +89,22 @@ impl Console {
     }
 
     fn print_char(&mut self, c: usize) {
+        if (self.height - self.position.1) < FONT_H {
+            self.scroll_up();
+            self.position.1 = self.height - FONT_H;
+        }
+
         // If character is "\n", just switch to next line.
         if c == ('\n' as usize) {
             self.position.0 = 0;
-            if (self.position.1 + FONT_H) >= self.height {
-                self.scroll_up();
-                self.position.1 -= FONT_H * 2;
-            } else {
-                self.position.1 += FONT_H;
-            }
+            self.position.1 += FONT_H;
             return;
         }
 
         // If over than self.width, switch to next line.
         if self.position.0 + FONT_W > self.width {
             self.position.0 = 0;
-            if (self.position.1 + FONT_H) >= self.height {
-                self.scroll_up();
-                self.position.1 -= FONT_H * 2;
-            } else {
-                self.position.1 += FONT_H;
-            }
+            self.position.1 += FONT_H;
         }
 
         // Compute the current position
