@@ -21,9 +21,6 @@
 #[macro_use]
 extern crate proka_kernel;
 extern crate alloc;
-use log::info;
-use proka_kernel::drivers::init_devices;
-use proka_kernel::fs::vfs::VFS;
 use proka_kernel::BASE_REVISION;
 /* C functions extern area */
 extern_safe! {
@@ -38,21 +35,8 @@ pub extern "C" fn kernel_main() -> ! {
     // Check is limine version supported
     assert!(BASE_REVISION.is_supported(), "Limine version not supported");
 
-    // 初始化内存管理
-    let memory_map_response = proka_kernel::MEMORY_MAP_REQUEST
-        .get_response()
-        .expect("Failed to get memory map response");
-
-    let hhdm_offset = proka_kernel::memory::paging::get_hhdm_offset();
-    let mut mapper = unsafe { proka_kernel::memory::paging::init_offset_page_table(hhdm_offset) };
-    let mut frame_allocator =
-        unsafe { proka_kernel::memory::paging::init_frame_allocator(memory_map_response) };
-
-    proka_kernel::memory::allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("Failed to initialize heap");
-
-    init_devices();
-
+    proka_kernel::memory::init(); // Initialize memory management
+    proka_kernel::drivers::init_devices(); // Initialize devices
     proka_kernel::libs::time::init(); // Init time system
     proka_kernel::libs::logger::init_logger(); // Init log system
 
@@ -60,35 +44,11 @@ pub extern "C" fn kernel_main() -> ! {
         .lock()
         .cursor_hidden();
 
-    // Print memory statistics
-    proka_kernel::memory::paging::print_memory_stats(&frame_allocator);
-
-    proka_kernel::libs::initrd::load_initrd();
-
-    // 初始化各个模块
-    proka_kernel::interrupts::gdt::init();
-    info!("GDT Initialized");
-    proka_kernel::interrupts::idt::init_idt();
-    info!("IDT initialized");
-
-    // Initialize Interrupt Controller
-    // We default to PIC for now as APIC support is partial (no IOAPIC yet)
-    proka_kernel::interrupts::pic::init();
-    info!("PIC initialized");
-
-    // Try to enable APIC if available
-    if proka_kernel::interrupts::apic::init() {
-        info!("APIC detected and enabled");
-    } else {
-        info!("Using legacy PIC only");
-    }
-
-    let st = proka_kernel::libs::time::time_since_boot();
-    println!("A");
-    let et = proka_kernel::libs::time::time_since_boot();
-    println!("Time since boot: {} ms", (et - st) * 1000.0);
-
-    x86_64::instructions::interrupts::enable();
+    proka_kernel::libs::initrd::load_initrd(); // Load initrd
+    proka_kernel::interrupts::gdt::init(); // Initialize GDT
+    proka_kernel::interrupts::idt::init_idt(); // Initialize IDT
+    proka_kernel::interrupts::pic::init(); // Initialize PI
+    x86_64::instructions::interrupts::enable(); // Enable interrupts
 
     println!("Device list:");
     for device in proka_kernel::drivers::DEVICE_MANAGER
@@ -97,17 +57,6 @@ pub extern "C" fn kernel_main() -> ! {
         .iter()
     {
         println!("{:?}", device);
-    }
-    let fp = VFS.open("test.txt").expect("Can't open initrd");
-    let mut buf = [0u8; 1024];
-    let len = fp.read(&mut buf).expect("Failed to read file");
-    println!(
-        "File content: {}",
-        core::str::from_utf8(&buf[..len]).unwrap()
-    );
-
-    for i in 0..10 {
-        println!("{}", i);
     }
 
     loop {
