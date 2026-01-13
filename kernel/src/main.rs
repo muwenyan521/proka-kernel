@@ -83,6 +83,11 @@ pub extern "C" fn kernel_main() -> ! {
         info!("Using legacy PIC only");
     }
 
+    let st = proka_kernel::libs::time::time_since_boot();
+    println!("A");
+    let et = proka_kernel::libs::time::time_since_boot();
+    println!("Time since boot: {} ms", (et - st) * 1000.0);
+
     x86_64::instructions::interrupts::enable();
 
     println!("Device list:");
@@ -100,6 +105,10 @@ pub extern "C" fn kernel_main() -> ! {
         "File content: {}",
         core::str::from_utf8(&buf[..len]).unwrap()
     );
+
+    for i in 0..10 {
+        println!("{}", i);
+    }
 
     loop {
         let mut buf = [0u8; 1];
