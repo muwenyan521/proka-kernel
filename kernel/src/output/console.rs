@@ -41,6 +41,7 @@ impl Console {
     }
 
     fn scroll_up(&mut self) {
+        /* Todo: optimize scrolling */
         let st = crate::libs::time::time_since_boot();
         // First, clear first line
         for y in 0..FONT_H {
@@ -84,7 +85,7 @@ impl Console {
         }
         let et = crate::libs::time::time_since_boot();
         use crate::serial_println;
-        serial_println!("{}", et - st);
+        serial_println!("Scroll up used time: {}", et - st);
     }
 
     fn print_char(&mut self, c: usize) {
@@ -93,7 +94,7 @@ impl Console {
             self.position.0 = 0;
             if (self.position.1 + FONT_H) >= self.height {
                 self.scroll_up();
-                self.position.1 -= FONT_H;
+                self.position.1 -= FONT_H * 2;
             } else {
                 self.position.1 += FONT_H;
             }
@@ -105,7 +106,7 @@ impl Console {
             self.position.0 = 0;
             if (self.position.1 + FONT_H) >= self.height {
                 self.scroll_up();
-                self.position.1 -= FONT_H;
+                self.position.1 -= FONT_H * 2;
             } else {
                 self.position.1 += FONT_H;
             }

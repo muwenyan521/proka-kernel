@@ -52,6 +52,7 @@ pub extern "C" fn kernel_main() -> ! {
         .expect("Failed to initialize heap");
 
     init_devices();
+    proka_kernel::libs::time::init(); // Init time system
     proka_kernel::libs::logger::init_logger(); // Init log system
 
     info!("Heap initialized");
@@ -98,8 +99,12 @@ pub extern "C" fn kernel_main() -> ! {
         core::str::from_utf8(&buf[..len]).unwrap()
     );
 
-    for _ in 0..20 {
-        println!("Hello world");
+    let time = proka_kernel::libs::time::time_since_boot();
+    println!("Time since boot: {time}");
+
+    for i in 0..1000 {
+        println!("Hello world {i}");
+        proka_kernel::libs::time::sleep_us(10);
     }
 
     loop {
