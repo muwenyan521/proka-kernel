@@ -1,5 +1,6 @@
 extern crate alloc;
 use crate::output::font8x16::FONT8X16;
+use crate::graphics::{Color, color};
 use crate::FRAMEBUFFER_REQUEST;
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
@@ -21,6 +22,7 @@ pub struct Console {
     height: u64,
     pitch: u64,
     position: (u64, u64), // (x, y)
+    fg_color: Color,
 }
 
 // We have to do it, so that it can be contained by Mutex.
@@ -37,6 +39,7 @@ impl Console {
             height: framebuffer.height(),
             pitch: framebuffer.pitch(),
             position: (0, 0),
+            fg_color: color::WHITE,
         }
     }
 
@@ -51,7 +54,7 @@ impl Console {
                     self.address
                         .add(offset as usize)
                         .cast::<u32>()
-                        .write(0x00000000);
+                        .write(self.fg_color.to_u32(true));
                 }
             }
         }
@@ -129,7 +132,7 @@ impl Console {
                             self.address
                                 .add(pixel_offset as usize)
                                 .cast::<u32>()
-                                .write(0xFFFFFFFF);
+                                .write(self.fg_color.to_u32(true));
                         }
                     }
                 }
