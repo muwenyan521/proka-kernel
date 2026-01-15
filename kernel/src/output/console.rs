@@ -23,6 +23,7 @@ pub struct Console {
     pitch: u64,
     position: (u64, u64), // (x, y)
     fg_color: Color,
+    bg_color: Color,
 }
 
 // We have to do it, so that it can be contained by Mutex.
@@ -40,6 +41,7 @@ impl Console {
             pitch: framebuffer.pitch(),
             position: (0, 0),
             fg_color: color::WHITE,
+            bg_color: color::BLACK,
         }
     }
 
@@ -69,7 +71,11 @@ impl Console {
         serial_println!("Scroll up used time: {} ms", (et - st) * 1000.0);
     }
 
-    fn print_char(&mut self, c: usize) {
+    /// Print a char to framebuffer console.
+    /// 
+    /// Note that the character must discovorable in ASCII, otherwise we don't know what
+    /// unexpected thing is being happened.
+    pub fn print_char(&mut self, c: usize) {
         if (self.height - self.position.1) < FONT_H {
             self.scroll_up();
             self.position.1 = self.height - FONT_H;
@@ -97,20 +103,26 @@ impl Console {
             for i in 0..FONT_W {
                 let mask = 0x80 >> i;
 
-                if FONT8X16[c][line as usize] & mask != 0 {
-                    // Write white pixel
-                    // Compute current pixel offset
-                    let x = start_x + i;
-                    let y = start_y + line;
-                    if x < self.width && y < self.height {
-                        let pixel_offset = y * self.pitch + x * 4;
-
+                // Write white pixel
+                // Compute current pixel offset
+                let x = start_x + i;
+                let y = start_y + line;
+                if x < self.width && y < self.height {
+                    let pixel_offset = y * self.pitch + x * 4;
+                    if FONT8X16[c][line as usize] & mask != 0 {
                         // Write
                         unsafe {
                             self.address
                                 .add(pixel_offset as usize)
                                 .cast::<u32>()
                                 .write(self.fg_color.to_u32(true));
+                        }
+                    } else {
+                        unsafe {
+                            self.address
+                                .add(pixel_offset as usize)
+                                .cast::<u32>()
+                                .write(self.bg_color.to_u32(true));
                         }
                     }
                 }
@@ -120,10 +132,32 @@ impl Console {
         self.position.0 += FONT_W;
     }
 
+    /// Print a string to console.
     pub fn print_string(&mut self, s: &str) {
         for c in s.bytes() {
             self.print_char(c as usize);
         }
+    }
+
+    /* Settings methods */
+    /// Set up the color of foreground character.
+    pub fn set_fg_color(&mut self, color: Color) {
+        self.fg_color = color
+    }
+
+    /// Set up the color of background character.
+    pub fn set_bg_color(&mut self, color: Color) {
+        self.bg_color = color
+    }
+
+    /// Get the color of foreground character.
+    pub fn get_fg_color(&self) -> Color {
+        self.fg_color
+    }
+
+    /// Get the color of background character.
+    pub fn get_bg_color(&self) -> Color {
+        self.bg_color
     }
 }
 
