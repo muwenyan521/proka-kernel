@@ -1,4 +1,3 @@
-// src/main.rs
 //! Proka Kernel - A kernel for ProkaOS
 //! Copyright (C) RainSTR Studio 2025, All Rights Reserved.
 //!
@@ -99,13 +98,13 @@ pub extern "C" fn kernel_main() -> ! {
         core::str::from_utf8(&buf[..len]).unwrap()
     );
 
+    let st = proka_kernel::libs::time::time_since_boot();
+    println!("A");
+    let et = proka_kernel::libs::time::time_since_boot();
+    println!("Time elasped for println! is {} ms", (et - st) * 1000.0);
+
     let time = proka_kernel::libs::time::time_since_boot();
     println!("Time since boot: {time}");
-
-    for i in 0..1000 {
-        println!("Hello world {i}");
-        proka_kernel::libs::time::sleep_us(10);
-    }
 
     loop {
         let mut buf = [0u8; 1];
