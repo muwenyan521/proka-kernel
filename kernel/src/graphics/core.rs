@@ -39,6 +39,13 @@ pub struct Renderer<'a> {
     back_buffer: Vec<u8>,         // 后台缓冲区
     pixel_size: usize,            // 每个像素占用的字节数
     clear_color: color::Color,    // 默认清屏颜色
+    dirty_min_x: u64,
+    dirty_min_y: u64,
+    dirty_max_x: u64,
+    dirty_max_y: u64,
+    width: usize,
+    height: usize,
+    bpp: usize,
 }
 
 impl<'a> Renderer<'a> {
@@ -56,6 +63,13 @@ impl<'a> Renderer<'a> {
             back_buffer,
             pixel_size,
             clear_color: color::BLACK,
+            dirty_min_x: u64::MAX,
+            dirty_min_y: u64::MAX,
+            dirty_max_x: 0,
+            dirty_max_y: 0,
+            width,
+            height,
+            bpp,
         }
     }
 
@@ -70,12 +84,12 @@ impl<'a> Renderer<'a> {
     /// 转换颜色为帧缓冲区格式
     #[inline(always)]
     fn mask_color(&self, color: &color::Color) -> u32 {
-        if self.framebuffer.bpp() == 32 {
+        if self.bpp == 32 {
             let value: u32 = ((color.r as u32) << self.framebuffer.red_mask_shift())
                 | ((color.g as u32) << self.framebuffer.green_mask_shift())
                 | ((color.b as u32) << self.framebuffer.blue_mask_shift());
             return value;
-        } else if self.framebuffer.bpp() == 24 {
+        } else if self.bpp == 24 {
             color.to_u32(false)
         } else {
             panic!("Unsupported bit per pixel: {}", self.framebuffer.bpp())
@@ -84,36 +98,47 @@ impl<'a> Renderer<'a> {
 
     /// 绘制像素到后台缓冲区
     #[inline(always)]
-    fn set_pixel_raw(&mut self, x: u64, y: u64, color: &color::Color) {
-        // 边界检查：确保像素在屏幕范围内
-        if x < self.framebuffer.width() && y < self.framebuffer.height() {
-            let offset = self.get_buffer_offset(x, y);
-            let color_u32 = if color.a == 255 {
-                self.mask_color(color)
-            } else if color.a > 0 {
-                // 读取后台缓冲区当前像素颜色进行alpha混合
-                let current_color = self.get_pixel_raw(x, y);
+    pub unsafe fn set_pixel_raw_unchecked(&mut self, x: u64, y: u64, color: &color::Color) {
+        let offset = self.get_buffer_offset(x, y);
 
-                // 执行alpha混合: result = (source * alpha + destination * (255 - alpha)) / 255
-                let alpha = color.a as u32;
-                let inv_alpha = 255 - alpha;
-                let r = (color.r as u32 * alpha + current_color.r as u32 * inv_alpha) / 255;
-                let g = (color.g as u32 * alpha + current_color.g as u32 * inv_alpha) / 255;
-                let b = (color.b as u32 * alpha + current_color.b as u32 * inv_alpha) / 255;
+        let color_u32 = if color.a == 255 {
+            self.mask_color(color)
+        } else if color.a == 0 {
+            return;
+        } else {
+            // 读取后台缓冲区当前像素颜色进行alpha混合
+            let current_color = self.get_pixel_raw(x, y);
 
-                let mixed_color = color::Color::with_alpha(r as u8, g as u8, b as u8, 255);
-                self.mask_color(&mixed_color)
-            } else {
-                // 纯透明,不绘制
-                return;
-            };
+            // 执行alpha混合: result = (source * alpha + destination * (255 - alpha)) / 255
+            let alpha = color.a as u32;
+            let inv_alpha = 255 - alpha;
+            let r = (color.r as u32 * alpha + current_color.r as u32 * inv_alpha) / 255;
+            let g = (color.g as u32 * alpha + current_color.g as u32 * inv_alpha) / 255;
+            let b = (color.b as u32 * alpha + current_color.b as u32 * inv_alpha) / 255;
 
-            let pixel_bytes = color_u32.to_le_bytes(); // 转换为字节数组
-            let bytes_to_write = &pixel_bytes[..self.pixel_size]; // 取BPP对应的字节数
-            for i in 0..self.pixel_size {
-                self.back_buffer[offset + i] = bytes_to_write[i];
-            }
+            let mixed_color = color::Color::with_alpha(r as u8, g as u8, b as u8, 255);
+            self.mask_color(&mixed_color)
+        };
+
+        let pixel_bytes = color_u32.to_le_bytes(); // 转换为字节数组
+        unsafe {
+            let dst_ptr = self.back_buffer.as_mut_ptr().add(offset);
+            core::ptr::copy_nonoverlapping(pixel_bytes.as_ptr(), dst_ptr, self.pixel_size);
         }
+
+        self.dirty_min_x = self.dirty_min_x.min(x);
+        self.dirty_min_y = self.dirty_min_y.min(y);
+        self.dirty_max_x = self.dirty_max_x.max(x);
+        self.dirty_max_y = self.dirty_max_y.max(y);
+    }
+
+    #[inline(always)]
+    pub fn set_pixel_raw(&mut self, x: u64, y: u64, color: &color::Color) {
+        // 边界检查：确保像素在屏幕范围内
+        if x >= self.width as u64 || y >= self.height as u64 {
+            return;
+        }
+        unsafe { self.set_pixel_raw_unchecked(x, y, color) };
     }
 
     /// 设置像素
@@ -164,6 +189,11 @@ impl<'a> Renderer<'a> {
                 }
             }
         }
+
+        self.dirty_min_x = 0;
+        self.dirty_min_y = 0;
+        self.dirty_max_x = width;
+        self.dirty_max_y = height;
     }
 
     /// 绘制线
@@ -578,27 +608,111 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    pub fn scroll_y(&mut self, offset: i64) {
+        let width = self.framebuffer.width();
+        let height = self.framebuffer.height();
+        let pixel_size = self.pixel_size;
+        let row_bytes = width as usize * pixel_size;
+
+        if offset == 0 {
+            return;
+        }
+
+        let abs_offset = offset.unsigned_abs();
+        if abs_offset >= height {
+            self.clear();
+            return;
+        }
+
+        let move_rows = height - abs_offset;
+        let move_bytes = move_rows as usize * row_bytes;
+
+        if offset > 0 {
+            let src_start = 0;
+            let dest_start = abs_offset as usize * row_bytes;
+            self.back_buffer
+                .copy_within(src_start..move_bytes, dest_start);
+
+            let clear_color = self.clear_color;
+            let masked_color = self.mask_color(&clear_color);
+            let pixel_bytes = masked_color.to_le_bytes();
+            let bytes_to_fill = &pixel_bytes[..pixel_size];
+
+            let mut clear_row = vec![0u8; row_bytes];
+            for x in 0..width as usize {
+                for i in 0..pixel_size {
+                    clear_row[x * pixel_size + i] = bytes_to_fill[i];
+                }
+            }
+            for y in 0..abs_offset {
+                let off = y as usize * row_bytes;
+                self.back_buffer[off..off + row_bytes].copy_from_slice(&clear_row);
+            }
+        } else {
+            let src_start = abs_offset as usize * row_bytes;
+            let dest_start = 0;
+            self.back_buffer
+                .copy_within(src_start..(src_start + move_bytes), dest_start);
+
+            let clear_color = self.clear_color;
+            let masked_color = self.mask_color(&clear_color);
+            let pixel_bytes = masked_color.to_le_bytes();
+            let bytes_to_fill = &pixel_bytes[..pixel_size];
+
+            let mut clear_row = vec![0u8; row_bytes];
+            for x in 0..width as usize {
+                for i in 0..pixel_size {
+                    clear_row[x * pixel_size + i] = bytes_to_fill[i];
+                }
+            }
+            for y in move_rows..height {
+                let off = y as usize * row_bytes;
+                self.back_buffer[off..off + row_bytes].copy_from_slice(&clear_row);
+            }
+        }
+        self.dirty_min_x = 0;
+        self.dirty_min_y = 0;
+        self.dirty_max_x = width;
+        self.dirty_max_y = height;
+    }
+
     /// 将后台缓冲区的内容复制到前台帧缓冲区，从而显示绘制结果。
     pub fn present(&mut self) {
-        let width = self.framebuffer.width() as usize;
-        let height = self.framebuffer.height() as usize;
+        let fb_width = self.framebuffer.width();
+        let fb_height = self.framebuffer.height();
+
+        let min_x = self.dirty_min_x.min(fb_width);
+        let min_y = self.dirty_min_y.min(fb_height);
+        let max_x = self.dirty_max_x.min(fb_width);
+        let max_y = self.dirty_max_y.min(fb_height);
+
+        if min_x >= max_x || min_y >= max_y {
+            return;
+        }
+
+        let width = (max_x - min_x) as usize;
         let pitch = self.framebuffer.pitch() as usize; // Framebuffer每行的字节数
         let pixel_size = self.pixel_size; // 后台缓冲区每个像素的字节数
+
         unsafe {
             let front_buffer_addr = self.framebuffer.addr();
-            // 逐行复制以处理可能不同的 pitch
-            for y_idx in 0..height {
-                let back_buffer_row_start = y_idx * width * pixel_size;
-                let front_buffer_row_start = y_idx * pitch;
-                // 获取后台缓冲区当前行的切片
+            for y in min_y..max_y {
+                let back_buffer_offset = (y * fb_width + min_x) as usize * pixel_size;
+                let front_buffer_offset = y as usize * pitch + min_x as usize * pixel_size;
+
                 let source_slice = &self.back_buffer
-                    [back_buffer_row_start..(back_buffer_row_start + width * pixel_size)];
-                // 获取前台帧缓冲区当前行的可变切片
-                let dest_ptr = front_buffer_addr.add(front_buffer_row_start);
+                    [back_buffer_offset..(back_buffer_offset + width * pixel_size)];
+
+                let dest_ptr = front_buffer_addr.add(front_buffer_offset);
                 let dest_slice = slice::from_raw_parts_mut(dest_ptr, width * pixel_size);
-                // 复制数据
+
                 dest_slice.copy_from_slice(source_slice);
             }
         }
+
+        self.dirty_min_x = u64::MAX;
+        self.dirty_min_y = u64::MAX;
+        self.dirty_max_x = 0;
+        self.dirty_max_y = 0;
     }
 }

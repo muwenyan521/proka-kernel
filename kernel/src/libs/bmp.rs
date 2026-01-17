@@ -1,4 +1,4 @@
-// graphics/bmp.rs
+/// BMP Image Parser
 extern crate alloc;
 use crate::graphics::color;
 use alloc::vec::Vec;
