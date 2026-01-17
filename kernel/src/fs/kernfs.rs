@@ -24,9 +24,7 @@ pub enum KernNodeContent {
         size: u64,
     },
     /// 设备映射
-    Device {
-        device: Arc<Device>,
-    },
+    Device { device: Arc<Device> },
 }
 
 /// 内核文件系统节点
@@ -186,18 +184,14 @@ impl Inode for KernInode {
         }
     }
 
-    fn create_device(
-        &self,
-        name: &str,
-        device: Arc<Device>,
-    ) -> Result<Arc<dyn Inode>, VfsError> {
+    fn create_device(&self, name: &str, device: Arc<Device>) -> Result<Arc<dyn Inode>, VfsError> {
         match &self.content {
             KernNodeContent::Dir(entries) => {
                 let mut map = entries.write();
                 if map.contains_key(name) {
                     return Err(VfsError::AlreadyExists);
                 }
-                
+
                 let new_inode = KernInode::new_device(device);
                 map.insert(name.to_string(), new_inode.clone());
                 Ok(new_inode)

@@ -1,4 +1,3 @@
-// src/main.rs
 //! Proka Kernel - A kernel for ProkaOS
 //! Copyright (C) RainSTR Studio 2025, All Rights Reserved.
 //!
@@ -39,12 +38,8 @@ pub extern "C" fn kernel_main() -> ! {
     proka_kernel::drivers::init_devices(); // Initialize devices
     proka_kernel::libs::time::init(); // Init time system
     proka_kernel::libs::logger::init_logger(); // Init log system
-
-    proka_kernel::output::console::CONSOLE
-        .lock()
-        .cursor_hidden();
-
-    proka_kernel::libs::initrd::load_initrd(); // Load initrd
+    proka_kernel::memory::paging::print_memory_stats(&frame_allocator);
+    proka_kerned::load_initrd(); // Load initrd
     proka_kernel::interrupts::gdt::init(); // Initialize GDT
     proka_kernel::interrupts::idt::init_idt(); // Initialize IDT
     proka_kernel::interrupts::pic::init(); // Initialize PI
@@ -58,6 +53,14 @@ pub extern "C" fn kernel_main() -> ! {
     {
         println!("{:?}", device);
     }
+
+    let st = proka_kernel::libs::time::time_since_boot();
+    println!("A");
+    let et = proka_kernel::libs::time::time_since_boot();
+    println!("Time elasped for println! is {} ms", (et - st) * 1000.0);
+
+    let time = proka_kernel::libs::time::time_since_boot();
+    println!("Time since boot: {time}");
 
     loop {
         let mut buf = [0u8; 1];

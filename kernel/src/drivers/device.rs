@@ -344,7 +344,7 @@ impl DeviceManager {
             if self.devices[index].is_open() {
                 return Err(DeviceError::DeviceStillInUse);
             }
-            
+
             let device_arc = self.devices.remove(index);
             device_arc.mark_unregistered();
             self.reclaim_device_number(device_arc.major, device_arc.minor);

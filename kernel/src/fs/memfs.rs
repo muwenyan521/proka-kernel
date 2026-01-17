@@ -279,11 +279,7 @@ impl Inode for MemVNode {
         }
     }
 
-    fn create_device(
-        &self,
-        name: &str,
-        device: Arc<Device>,
-    ) -> Result<Arc<dyn Inode>, VfsError> {
+    fn create_device(&self, name: &str, device: Arc<Device>) -> Result<Arc<dyn Inode>, VfsError> {
         match &self.content {
             MemNodeContent::Dir { entries } => {
                 let mut entries = entries.write();
@@ -291,10 +287,7 @@ impl Inode for MemVNode {
                     return Err(VfsError::AlreadyExists);
                 }
 
-                let new_node = MemVNode::new(
-                    VNodeType::Device,
-                    MemNodeContent::Device { device },
-                );
+                let new_node = MemVNode::new(VNodeType::Device, MemNodeContent::Device { device });
                 entries.insert(name.to_string(), new_node.clone());
                 self.update_mtime();
                 Ok(new_node)
