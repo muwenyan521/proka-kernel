@@ -44,6 +44,9 @@ run: iso
 debug: iso
 	qemu-system-x86_64 -enable-kvm $(QEMU_FLAGS) $(QEMU_OUT) -s -S
 
+menuconfig:
+	cd ./kernel && cargo anaxa menuconfig
+
 clean:
 	make -C kernel clean
 	rm -rf proka-kernel.iso

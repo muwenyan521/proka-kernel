@@ -39,9 +39,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "anaxa-builder"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3181ce699d4922f774da5f5309edbe25090eb4b671caff6ab413929788a607ee"
+checksum = "e08090576615e0b283b40df9a48110d707c368eabeb34a776d333843b15f71fc"
 dependencies = [
  "anyhow",
  "clap",

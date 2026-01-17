@@ -57,6 +57,9 @@ sudo apt-get install -y gcc make
 
 # Install runtime and image creation tools
 sudo apt-get install -y xorriso cpio qemu-system-x86
+
+# Install Kernel Config Generator
+cargo install anaxa-builder
 ```
 
 ### Build Process
