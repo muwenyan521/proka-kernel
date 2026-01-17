@@ -9,6 +9,7 @@
 
 extern crate alloc;
 use crate::memory::frame_allocator::{format_bytes, FrameStats, LockedFrameAllocator};
+use crate::println;
 use limine::response::MemoryMapResponse;
 use x86_64::{
     registers::control::Cr3,
@@ -80,14 +81,14 @@ pub unsafe fn init_frame_allocator(memory_map: &'static MemoryMapResponse) -> Lo
 pub fn print_memory_stats(frame_allocator: &LockedFrameAllocator) {
     let stats = frame_allocator.stats();
 
-    log::info!("=== Memory Statistics ===");
-    log::info!("Total frames:    {}", stats.total_frames);
-    log::info!("Used frames:     {}", stats.used_frames);
-    log::info!("Free frames:     {}", stats.free_frames);
-    log::info!("Total memory:    {}", format_bytes(stats.total_memory));
-    log::info!("Used memory:     {}", format_bytes(stats.used_memory));
-    log::info!("Free memory:     {}", format_bytes(stats.free_memory));
-    log::info!(
+    println!("=== Memory Statistics ===");
+    println!("Total frames:    {}", stats.total_frames);
+    println!("Used frames:     {}", stats.used_frames);
+    println!("Free frames:     {}", stats.free_frames);
+    println!("Total memory:    {}", format_bytes(stats.total_memory));
+    println!("Used memory:     {}", format_bytes(stats.used_memory));
+    println!("Free memory:     {}", format_bytes(stats.free_memory));
+    println!(
         "Usage:           {}%",
         (stats.used_frames * 100) / stats.total_frames
     );

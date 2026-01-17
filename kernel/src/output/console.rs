@@ -1,8 +1,8 @@
 extern crate alloc;
-use alloc::{vec, vec::Vec};
 use crate::graphics::{color, Color};
 use crate::output::font8x16::FONT8X16;
 use crate::FRAMEBUFFER_REQUEST;
+use alloc::{vec, vec::Vec};
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -36,7 +36,7 @@ pub struct Console {
     bg_color: Color,
     parse_state: ParseState,
     ansi_params: Vec<u16>,
-    current_param: u16,      // Current ANSI param
+    current_param: u16, // Current ANSI param
 }
 
 // We have to do it, so that it can be contained by Mutex.

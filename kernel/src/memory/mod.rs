@@ -10,6 +10,8 @@ pub fn init() {
     let hhdm_offset = paging::get_hhdm_offset();
     let mut mapper = unsafe { paging::init_offset_page_table(hhdm_offset) };
     let mut frame_allocator = unsafe { paging::init_frame_allocator(memory_map_response) };
-
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("Failed to init heap");
+
+    // Print memory stats
+    paging::print_memory_stats(&frame_allocator);
 }
