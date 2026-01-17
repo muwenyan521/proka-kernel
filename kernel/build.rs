@@ -14,7 +14,11 @@ fn main() {
     println!("cargo:rustc-link-arg=-no-pie");
 
     // Check the file should link
-    let obj_dir = Path::new("target/obj");
+    let workspace_root = Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .parent()
+        .expect("CARGO_MANIFEST_DIR should be doubly nested in workspace")
+        .to_path_buf();
+    let obj_dir = workspace_root.join("target/obj");
 
     if let Ok(paths) = glob(&format!("{}/*.o", obj_dir.display())) {
         for path_result in paths {
