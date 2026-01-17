@@ -21,6 +21,10 @@ pub mod panic;
 pub mod process;
 pub mod test;
 
+pub mod config {
+    include!(concat!(env!("OUT_DIR"), "/config.rs"));
+}
+
 // Re-export common memory management types and functions
 pub use memory::frame_allocator::{format_bytes, FrameStats, LockedFrameAllocator};
 pub use memory::paging::{

@@ -61,6 +61,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     let time = proka_kernel::libs::time::time_since_boot();
     println!("Time since boot: {time}");
+    println!("{}", proka_kernel::config::LOG_LEVEL);
 
     loop {
         let mut buf = [0u8; 1];

@@ -8,7 +8,13 @@ use glob::glob;
 use std::path::Path;
 
 fn main() {
-    // Tell Rust to link the ELF file generated
+    anaxa_builder::BuildHelper::new()
+        .expect("Failed to create BuildHelper")
+        .with_kconfig_dir("src")
+        .with_config_file(".config")
+        .build()
+        .expect("Failed to build configurations");
+
     println!("cargo:rustc-link-arg=-Tlinker.ld");
     println!("cargo:rustc-link-arg=-nostdlib");
     println!("cargo:rustc-link-arg=-no-pie");
