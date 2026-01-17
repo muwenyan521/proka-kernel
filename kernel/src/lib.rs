@@ -18,6 +18,7 @@ pub mod libs;
 pub mod memory;
 pub mod output;
 pub mod panic;
+pub mod process;
 pub mod test;
 
 // Re-export common memory management types and functions
