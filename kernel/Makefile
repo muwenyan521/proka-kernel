@@ -19,8 +19,12 @@ ifeq ($(RUST_TARGET),)
 	endif
 endif
 
-ifeq ($(RUST_PROFILE),)
+ifeq ($(PROFILE), dev)
     override RUST_PROFILE := dev
+endif
+
+ifeq ($(PROFILE),)
+    override RUST_PROFILE := release
 endif
 
 override RUST_PROFILE_SUBDIR := $(RUST_PROFILE)

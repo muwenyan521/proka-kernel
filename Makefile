@@ -17,12 +17,16 @@ QEMU_FLAGS := -bios ./assets/OVMF.fd -cdrom proka-kernel.iso --machine q35 -m 1G
 QEMU_OUT := -serial stdio $(QEMU_reOUT)
 # Build the clean codes (easy, just run the Makefile in each dirs)
 all:
-    # Iterate all the BUILD_DIRS.
+	# Iterate all the BUILD_DIRS.
 	$(foreach dir, $(BUILD_DIRS), make -C $(dir) OBJ_DIR=$(OBJ_DIR);)
+
+debug:
+	# Iterate all the BUILD_DIRS, but use debug.
+	$(foreach dir, $(BUILD_DIRS), make -C $(dir) OBJ_DIR=$(OBJ_DIR) PROFILE=dev;)
 
 ## Build the ISO image
 # This code is from TMXQWQ/TKernel2 in github
-iso: all kernel/kernel initrd
+iso: debug kernel/kernel initrd
 	mkdir -p iso
 	cp -r ./assets/rootfs/* ./iso/
 	cp ./assets/initrd.cpio ./iso/initrd.cpio
@@ -41,7 +45,7 @@ run: iso
 	qemu-system-x86_64 -enable-kvm $(QEMU_FLAGS) $(QEMU_OUT)
 	@echo "QEMU started"
 
-debug: iso
+rundebug: iso
 	qemu-system-x86_64 -enable-kvm $(QEMU_FLAGS) $(QEMU_OUT) -s -S
 
 menuconfig:
@@ -49,5 +53,5 @@ menuconfig:
 
 clean:
 	make -C kernel clean
-	rm -rf proka-kernel.iso
+	rm -rf proka-kernel.iso target
 
