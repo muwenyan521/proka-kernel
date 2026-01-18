@@ -95,7 +95,7 @@ From the project root:
 Thank you to all contributors!
 
 *   **zhangxuan2011** <zx20110412@outlook.com>
-*   **moyan** <moyan@moyanjdc.top>
+*   **moyan** <me@moyanjdc.top>
 *   **xiaokuai** <rainyhowcool@outlook.com>
 *   **TMX** <273761857@qq.com>
 
