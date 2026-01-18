@@ -14,7 +14,7 @@ use x86_64::{
 /// The starting virtual address of the heap
 pub const HEAP_START: usize = 0x_4444_4444_0000;
 /// The size of the heap in bytes (8 MiB)
-pub const HEAP_SIZE: usize = 8 * 1024 * 1024;
+pub const HEAP_SIZE: usize = crate::config::KERNEL_DEFAULT_HEAP_SIZE as usize;
 
 #[global_allocator]
 pub static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> = Talc::new(unsafe {

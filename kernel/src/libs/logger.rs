@@ -50,8 +50,12 @@ macro_rules! success {
 pub fn init_logger() {
     static LOGGER: KernelLogger = KernelLogger;
     log::set_logger(&LOGGER).expect("Failed to set logger");
-    #[cfg(debug_assertions)]
-    log::set_max_level(log::LevelFilter::Trace);
-    #[cfg(not(debug_assertions))]
-    log::set_max_level(log::LevelFilter::Info);
+    match crate::config::LOG_LEVEL {
+        "Trace" => log::set_max_level(log::LevelFilter::Trace),
+        "Debug" => log::set_max_level(log::LevelFilter::Debug),
+        "Info" => log::set_max_level(log::LevelFilter::Info),
+        "Warn" => log::set_max_level(log::LevelFilter::Warn),
+        "Error" => log::set_max_level(log::LevelFilter::Error),
+        &_ => {}
+    }
 }

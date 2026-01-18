@@ -13,7 +13,7 @@ use spin::Mutex;
 use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
 
 /// The size of a page in bytes (4 KiB)
-pub const PAGE_SIZE: usize = 4096;
+pub const PAGE_SIZE: usize = crate::config::PAGE_SIZE as usize;
 
 /// Bitmap frame allocator type - supports up to 16M frames (64 GiB)
 type BitAlloc16M = bitmap_allocator::BitAlloc16M;

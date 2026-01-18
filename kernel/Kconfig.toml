@@ -1,0 +1,13 @@
+title = "Proka Kernel Configuration"
+
+[menu]
+# The core configuration, which is at "src" root.
+core = "src"
+
+# The memory configuration.
+memory = "src/memory"
+
+# The library configuration.
+library = "src/libs"
+
+output = "src/output"

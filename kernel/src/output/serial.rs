@@ -1,10 +1,11 @@
 extern crate alloc;
 use crate::drivers::DEVICE_MANAGER;
 use uart_16550::SerialPort;
+use crate::config::SERIAL_LOG_PORT;
 
 pub fn serial_fallback(args: ::core::fmt::Arguments) {
     use core::fmt::Write;
-    let mut serial_port = unsafe { SerialPort::new(0x3F8) };
+    let mut serial_port = unsafe { SerialPort::new(SERIAL_LOG_PORT as u16) };
     serial_port.init();
     // 输出错误信息
     serial_port

@@ -1,0 +1,9 @@
+title = "Library Configuration"
+
+[[config]]
+name = "LOG_LEVEL"
+type = "choice"
+default = "Info"
+desc = "Kernel Log Level"
+options = ["Trace", "Debug", "Info", "Warn", "Error"]
+help = "Sets the maximum log level for the kernel logger."
