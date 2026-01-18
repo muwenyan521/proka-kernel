@@ -10,7 +10,7 @@ use std::path::Path;
 fn main() {
     anaxa_builder::BuildHelper::new()
         .expect("Failed to create BuildHelper")
-        .with_kconfig_dir("src")
+        .with_kconfig_dir(".")
         .with_config_file(".config")
         .build()
         .expect("Failed to build configurations");
