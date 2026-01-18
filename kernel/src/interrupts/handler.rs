@@ -52,6 +52,12 @@ exception_handler_with_error_code!(alignment_check_handler, "ALIGNMENT CHECK");
 exception_handler_with_error_code!(control_protection_handler, "CONTROL PROTECTION EXCEPTION");
 
 // 特殊处理异常 -------------------------------------------------
+pub extern "x86-interrupt" fn spurious_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    // 伪中断不需要发送 EOI，仅作为占位符防止未处理中断引发异常
+    // 在调试模式下可以打印日志
+    // serial_println!("SPURIOUS INTERRUPT");
+}
+
 pub extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,

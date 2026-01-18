@@ -6,9 +6,14 @@ use x86_64::structures::idt::InterruptDescriptorTable;
 // 定义 PIC 相关的中断向量数量
 #[allow(dead_code)]
 pub const PICS_EVT_COUNT: u8 = 16; // IRQ0到IRQ15，共16个中断
+pub const SPURIOUS_APIC_VECTOR: u8 = 0xFF; // APIC 伪中断向量
+
 lazy_static! {
     pub static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
+        // Spurious Interrupt Handler
+        idt[SPURIOUS_APIC_VECTOR].set_handler_fn(handler::spurious_interrupt_handler);
+
         // 无错误码异常设置
         idt.divide_error.set_handler_fn(handler::divide_error_handler);
         idt.debug.set_handler_fn(handler::debug_handler);
