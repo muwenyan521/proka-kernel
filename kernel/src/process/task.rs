@@ -23,6 +23,7 @@ pub enum TaskState {
 }
 
 /// The object of a task.
+#[allow(unused)]
 pub struct Task {
     /// The ID of this task.
     ///
@@ -73,7 +74,7 @@ impl TaskManager {
     pub fn create_task(&mut self, priority: u8) {
         // Allocate a task id
         let task_id = self.next_tid;
-        
+
         // Push the task to the tasks container
         self.tasks.push(Task::new(task_id, priority));
 
@@ -81,4 +82,3 @@ impl TaskManager {
         self.next_tid = self.next_tid.wrapping_add(1);
     }
 }
-
