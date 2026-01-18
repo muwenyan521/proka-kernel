@@ -1,6 +1,6 @@
 # Proka Kernel - A kernel for ProkaOS
 
-**Copyright (C) 2025 RainSTR Studio. All rights reserved.**
+**Copyright (C) 2026 RainSTR Studio. All rights reserved.**
 
 ---
 
@@ -66,26 +66,32 @@ cargo install anaxa-builder
 
 From the project root:
 
-1.  **Compile Kernel**:
+1.  **Make up config (Optional)**:
+    ```bash
+    make menuconfig
+    ```
+    Please follow its instructions to config.
+
+2.  **Compile Kernel**:
     ```bash
     make
     ```
     Kernel file at `kernel/kernel`.
 
-2.  **Build ISO Image**:
+3.  **Build ISO Image**:
     ```bash
     make iso
     ```
     ISO file `proka-kernel.iso` in project root.
 
-3.  **Run in QEMU**:
+4.  **Run in QEMU**:
     ```bash
     make run
     ```
     QEMU will launch, displaying kernel output in the terminal.
 
-## Contributors
 
+## Contributors
 Thank you to all contributors!
 
 *   **zhangxuan2011** <zx20110412@outlook.com>
@@ -95,8 +101,11 @@ Thank you to all contributors!
 
 ### How to Contribute
 
-We welcome contributions: Bug reports, Pull Requests (features, fixes, optimizations), documentation improvements, and feedback.
+We welcome your contributions: Bug reports, Pull Requests (features, fixes, optimizations), documentation improvements, and feedback.
+
 Refer to `CONTRIBUTING.md` for guidelines.
+
+And don't forget to add your name to [**Contributors List**](#contributors)!
 
 ## License
 
