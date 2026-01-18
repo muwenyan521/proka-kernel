@@ -1,4 +1,4 @@
-title = "Proka Kernel Configuration"
+title = "Kernel Configuration"
 
 [menu]
 # The core configuration, which is at "src" root.

@@ -1,4 +1,5 @@
-title = "Core Configuration"
+title = "Core"
+desc = "Core Kernel Configuration"
 
 [[config]]
 name = "ENABLE_GRAPHICS"

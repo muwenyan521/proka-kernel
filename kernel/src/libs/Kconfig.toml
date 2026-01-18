@@ -1,4 +1,4 @@
-title = "Library Configuration"
+title = "Utility"
 
 [[config]]
 name = "LOG_LEVEL"

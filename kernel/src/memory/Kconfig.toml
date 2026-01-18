@@ -1,4 +1,4 @@
-title = "Kernel Memory Configuration"
+title = "Memory Manager"
 
 [[config]]
 name = "KERNEL_DEFAULT_HEAP_SIZE"
