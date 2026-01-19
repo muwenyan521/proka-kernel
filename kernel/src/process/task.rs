@@ -1,5 +1,4 @@
 extern crate alloc;
-use crate::memory::allocator::ALLOCATOR;
 use alloc::{boxed::Box, vec::Vec};
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -59,6 +58,9 @@ pub struct TaskManager {
     /// The field which contains all tasks.
     tasks: Vec<Box<Task>>,
 
+    /// The task ID which has been allocated.
+    allocated_tid: Vec<u16>,
+
     /// The next task id
     next_tid: u16,
 }
@@ -67,18 +69,37 @@ impl TaskManager {
     pub const fn new() -> Self {
         Self {
             tasks: Vec::new(),
+            allocated_tid: Vec::new(),
             next_tid: 0,
         }
     }
 
     pub fn create_task(&mut self, priority: u8) {
         // Allocate a task id
-        let task_id = self.next_tid;
+        let mut task_id = self.next_tid;
+
+        // Check: is current ID has been allocated
+        if self.allocated_tid.contains(&task_id) {
+            task_id += 1;
+        }
 
         // Push the task to the tasks container
         self.tasks.push(Task::new(task_id, priority));
 
+        // Set the current id is allocated.
+        self.allocated_tid.push(task_id);
+
         // Set up new ID
         self.next_tid = self.next_tid.wrapping_add(1);
+    }
+
+    pub fn delete_task(&mut self, task_id: u16) -> Result<(), &'static str> {
+        // Check is task ID allocated.
+        if !self.allocated_tid.contains(&task_id) {
+            return Err("The task ID is unable to discovor.");
+        }
+
+        // Find the task to remove from [`tasks`].
+        Ok(())
     }
 }
